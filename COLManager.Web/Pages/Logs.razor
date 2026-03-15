@@ -1,0 +1,324 @@
+@page "/logs"
+@using COLManager.Web.Services
+@inject ILogService LogService
+@inject IJSRuntime JS
+
+<h3>Application Logs</h3>
+
+<div class="row mb-3">
+    <div class="col-md-3">
+        <label class="form-label">Filter by Date</label>
+        <input type="date" class="form-control" @bind="SelectedDate" />
+        <button class="btn btn-primary btn-sm mt-2" @onclick="FilterByDate">Filter</button>
+    </div>
+    <div class="col-md-3">
+        <label class="form-label">Filter by Level</label>
+        <select class="form-select" @bind="SelectedLogLevel">
+            <option value="">-- All Levels --</option>
+            <option value="Debug">Debug</option>
+            <option value="Information">Information</option>
+            <option value="Warning">Warning</option>
+            <option value="Error">Error</option>
+            <option value="Fatal">Fatal</option>
+        </select>
+        <button class="btn btn-primary btn-sm mt-2" @onclick="FilterByLevel">Filter</button>
+    </div>
+    <div class="col-md-3">
+        <label class="form-label">&nbsp;</label>
+        <button class="btn btn-secondary btn-sm w-100 mt-4" @onclick="RefreshLogs">Refresh</button>
+    </div>
+    <div class="col-md-3">
+        <label class="form-label">&nbsp;</label>
+        <div class="btn-group w-100 mt-4" role="group">
+            <button class="btn btn-info btn-sm" @onclick="ExportLogs">Export</button>
+            <button class="btn btn-danger btn-sm" @onclick="ShowClearConfirmation">Clear</button>
+        </div>
+    </div>
+</div>
+
+@if (IsLoading)
+{
+    <p><span class="spinner-border spinner-border-sm me-2"></span>Loading logs...</p>
+}
+else if (LogEntries == null || !LogEntries.Any())
+{
+    <div class="alert alert-info mt-3">
+        No log entries found.
+    </div>
+}
+else
+{
+    <div class="alert alert-info mt-3">
+        Showing @LogEntries.Count() entries
+    </div>
+    <div class="table-responsive">
+        <table class="table table-sm table-striped table-hover">
+            <thead class="table-dark">
+                <tr>
+                    <th style="width: 180px;">Timestamp</th>
+                    <th style="width: 80px;">Level</th>
+                    <th>Logger</th>
+                    <th>Message</th>
+                    <th style="width: 80px;"></th>
+                </tr>
+            </thead>
+            <tbody>
+                @foreach (var entry in LogEntries)
+                {
+                    <tr>
+                        <td><small>@entry.Timestamp.ToString("yyyy-MM-dd HH:mm:ss")</small></td>
+                        <td>
+                            <span class="@GetBadgeClass(entry.Level)">
+                                @entry.Level
+                            </span>
+                        </td>
+                        <td><small class="text-muted">@GetLoggerName(entry.Logger)</small></td>
+                        <td>
+                            <small>@entry.Message</small>
+                            @if (!string.IsNullOrEmpty(entry.Exception))
+                            {
+                                <br />
+                                <small class="text-danger">@entry.Exception.Substring(0, Math.Min(100, entry.Exception.Length))...</small>
+                            }
+                        </td>
+                        <td>
+                            @if (!string.IsNullOrEmpty(entry.Exception))
+                            {
+                                <button class="btn btn-xs btn-warning" @onclick="() => ShowException(entry)" style="padding: 2px 6px; font-size: 0.75rem;">
+                                    <i class="bi bi-exclamation-triangle"></i>
+                                </button>
+                            }
+                        </td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+    </div>
+}
+
+@if (ShowingException && SelectedLogEntry != null)
+{
+    <div class="modal show d-block" style="background-color: rgba(0,0,0,0.5); z-index: 1060;">
+        <div class="modal-dialog modal-lg">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title"><i class="bi bi-exclamation-triangle-fill text-danger"></i> Exception Details</h5>
+                    <button type="button" class="btn-close" @onclick="CloseException"></button>
+                </div>
+                <div class="modal-body">
+                    <div class="mb-2">
+                        <strong>Timestamp:</strong> @SelectedLogEntry.Timestamp.ToString("yyyy-MM-dd HH:mm:ss")
+                    </div>
+                    <div class="mb-2">
+                        <strong>Level:</strong> <span class="@GetBadgeClass(SelectedLogEntry.Level)">@SelectedLogEntry.Level</span>
+                    </div>
+                    <div class="mb-2">
+                        <strong>Logger:</strong> @SelectedLogEntry.Logger
+                    </div>
+                    <div class="mb-3">
+                        <strong>Message:</strong> @SelectedLogEntry.Message
+                    </div>
+                    <div>
+                        <strong>Exception:</strong>
+                        <pre class="bg-light p-3 rounded"><code style="white-space: pre-wrap; word-break: break-word;">@SelectedLogEntry.Exception</code></pre>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" @onclick="CloseException">Close</button>
+                </div>
+            </div>
+        </div>
+    </div>
+}
+
+@code {
+    private IEnumerable<LogEntry> LogEntries = Enumerable.Empty<LogEntry>();
+    private LogEntry? SelectedLogEntry;
+    private bool IsLoading = false;
+    private bool ShowingException = false;
+    private DateTime SelectedDate = DateTime.Today;
+    private string SelectedLogLevel = "";
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadLogs();
+    }
+
+    private async Task LoadLogs()
+    {
+        IsLoading = true;
+        try
+        {
+            LogEntries = await LogService.GetAllLogsAsync();
+        }
+        catch (Exception ex)
+        {
+            await JS.InvokeVoidAsync("showToast", $"Error loading logs: {ex.Message}");
+        }
+        finally
+        {
+            IsLoading = false;
+        }
+    }
+
+    private async Task RefreshLogs()
+    {
+        IsLoading = true;
+        try
+        {
+            LogEntries = await LogService.GetAllLogsAsync();
+        }
+        catch (Exception ex)
+        {
+            await JS.InvokeVoidAsync("showToast", $"Error refreshing logs: {ex.Message}");
+        }
+        finally
+        {
+            IsLoading = false;
+        }
+    }
+
+    private async Task FilterByDate()
+    {
+        IsLoading = true;
+        try
+        {
+            LogEntries = await LogService.GetLogsByDateAsync(SelectedDate);
+            if (!LogEntries.Any())
+            {
+                await JS.InvokeVoidAsync("showToast", "No logs found for the selected date.");
+            }
+        }
+        catch (Exception ex)
+        {
+            await JS.InvokeVoidAsync("showToast", $"Error filtering by date: {ex.Message}");
+        }
+        finally
+        {
+            IsLoading = false;
+        }
+    }
+
+    private async Task FilterByLevel()
+    {
+        IsLoading = true;
+        try
+        {
+            if (string.IsNullOrEmpty(SelectedLogLevel))
+            {
+                LogEntries = await LogService.GetAllLogsAsync();
+            }
+            else
+            {
+                LogEntries = await LogService.GetLogsByLevelAsync(SelectedLogLevel);
+            }
+
+            if (!LogEntries.Any())
+            {
+                await JS.InvokeVoidAsync("showToast", "No logs found for the selected level.");
+            }
+        }
+        catch (Exception ex)
+        {
+            await JS.InvokeVoidAsync("showToast", $"Error filtering by level: {ex.Message}");
+        }
+        finally
+        {
+            IsLoading = false;
+        }
+    }
+
+    private void ShowException(LogEntry entry)
+    {
+        SelectedLogEntry = entry;
+        ShowingException = true;
+    }
+
+    private void CloseException()
+    {
+        ShowingException = false;
+        SelectedLogEntry = null;
+    }
+
+    private async Task ExportLogs()
+    {
+        IsLoading = true;
+        try
+        {
+            var data = await LogService.ExportLogsAsync();
+            if (data != null && data.Length > 0)
+            {
+                await JS.InvokeVoidAsync("downloadFile", "logs_export.txt", data);
+            }
+            else
+            {
+                await JS.InvokeVoidAsync("showToast", "No logs to export.");
+            }
+        }
+        catch (Exception ex)
+        {
+            await JS.InvokeVoidAsync("showToast", $"Error exporting logs: {ex.Message}");
+        }
+        finally
+        {
+            IsLoading = false;
+        }
+    }
+
+    private async Task ShowClearConfirmation()
+    {
+        var confirmed = await JS.InvokeAsync<bool>("confirmAction", "Clear all logs? This action cannot be undone.");
+        if (confirmed)
+        {
+            await ClearLogs();
+        }
+    }
+
+    private async Task ClearLogs()
+    {
+        IsLoading = true;
+        try
+        {
+            var success = await LogService.ClearLogsAsync();
+            if (success)
+            {
+                await JS.InvokeVoidAsync("showToast", "Logs cleared successfully.");
+                await LoadLogs();
+            }
+            else
+            {
+                await JS.InvokeVoidAsync("showToast", "Failed to clear logs.");
+            }
+        }
+        catch (Exception ex)
+        {
+            await JS.InvokeVoidAsync("showToast", $"Error clearing logs: {ex.Message}");
+        }
+        finally
+        {
+            IsLoading = false;
+        }
+    }
+
+    private string GetBadgeClass(string level)
+    {
+        return level?.ToLower() switch
+        {
+            "debug" => "badge bg-secondary",
+            "information" => "badge bg-info",
+            "warning" => "badge bg-warning text-dark",
+            "error" => "badge bg-danger",
+            "fatal" => "badge bg-dark",
+            _ => "badge bg-secondary"
+        };
+    }
+
+    private string GetLoggerName(string fullPath)
+    {
+        if (string.IsNullOrEmpty(fullPath))
+            return "Unknown";
+        
+        var parts = fullPath.Split('.');
+        return parts.Length > 0 ? parts[^1] : fullPath;
+    }
+}

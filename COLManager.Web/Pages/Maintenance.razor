@@ -1,0 +1,135 @@
+@page "/maintenance"
+@inject COLManager.Web.Services.IMaintenanceService MaintenanceService
+@inject COLManager.Web.Services.IColumnService ColumnService
+@inject Microsoft.JSInterop.IJSRuntime JS
+
+<h3>Maintenance</h3>
+
+@if (!string.IsNullOrEmpty(Message)) { <div class="message">@Message</div> }
+
+<div>
+    <label>Select Column</label>
+    <InputSelect @bind-Value="SelectedColumnId" onchange="LoadForColumn">
+        <option value="0">-- select --</option>
+        @foreach (var c in Columns)
+        {
+            <option value="@c.ColumnID">@c.ColumnName (@c.SerialNumber)</option>
+        }
+    </InputSelect>
+</div>
+
+@if (IsLoading)
+{
+    <p>Loading...</p>
+}
+else
+{
+    <button class="btn" @onclick="BeginCreate">New Maintenance</button>
+    <table class="table">
+        <thead>
+            <tr>
+                <th>ID</th>
+                <th>Type</th>
+                <th>Description</th>
+                <th>PerformedOn</th>
+                <th>PerformedBy</th>
+            </tr>
+        </thead>
+        <tbody>
+            @foreach (var m in Maints)
+            {
+                <tr>
+                    <td>@m.MaintenanceID</td>
+                    <td>@m.MaintenanceType</td>
+                    <td>@m.Description</td>
+                    <td>@m.PerformedOn.ToString("yyyy-MM-dd")</td>
+                    <td>@m.PerformedBy</td>
+                </tr>
+            }
+        </tbody>
+    </table>
+}
+
+@if (Creating)
+{
+    <h4>Log Maintenance</h4>
+    <EditForm Model="CreateModel" OnValidSubmit="Create">
+        <DataAnnotationsValidator />
+        <ValidationSummary />
+        <div>
+            <label>Maintenance Type</label>
+            <InputText @bind-Value="CreateModel.MaintenanceType" />
+        </div>
+        <div>
+            <label>Description</label>
+            <InputTextArea @bind-Value="CreateModel.Description" />
+        </div>
+        <div>
+            <label>Performed By</label>
+            <InputText @bind-Value="CreateModel.PerformedBy" />
+        </div>
+        <div style="margin-top:8px;">
+            <button type="submit" class="btn">Save</button>
+            <button type="button" class="btn" @onclick="CancelCreate">Cancel</button>
+        </div>
+    </EditForm>
+}
+
+@code {
+    private IEnumerable<COLManager.Web.Entities.ColumnMaintenanceLog> Maints = Array.Empty<COLManager.Web.Entities.ColumnMaintenanceLog>();
+    private IEnumerable<COLManager.Web.DTOs.ColumnMasterReadDto> Columns = Array.Empty<COLManager.Web.DTOs.ColumnMasterReadDto>();
+    private int SelectedColumnId = 0;
+    private bool IsLoading = true;
+    private bool Creating = false;
+    private string? Message;
+
+    private COLManager.Web.Entities.ColumnMaintenanceLog CreateModel = new COLManager.Web.Entities.ColumnMaintenanceLog();
+
+    protected override async Task OnInitializedAsync()
+    {
+        var cols = await ColumnService.GetAllAsync();
+        if (cols.Success) Columns = cols.Data ?? Array.Empty<COLManager.Web.DTOs.ColumnMasterReadDto>();
+        IsLoading = false;
+    }
+
+    private async Task LoadForColumn(ChangeEventArgs args)
+    {
+        if (int.TryParse(args?.Value?.ToString(), out var id))
+        {
+            SelectedColumnId = id;
+            await Load();
+        }
+    }
+
+    private async Task Load()
+    {
+        if (SelectedColumnId == 0) return;
+        IsLoading = true;
+        var res = await MaintenanceService.GetByColumnAsync(SelectedColumnId);
+        if (res.Success) Maints = res.Data ?? Array.Empty<COLManager.Web.Entities.ColumnMaintenanceLog>();
+        else Message = res.Message;
+        IsLoading = false;
+    }
+
+    private void BeginCreate()
+    {
+        if (SelectedColumnId == 0) { Message = "Select a column first."; return; }
+        Creating = true;
+        CreateModel = new COLManager.Web.Entities.ColumnMaintenanceLog { ColumnID = SelectedColumnId };
+    }
+
+    private void CancelCreate() => Creating = false;
+
+    private async Task Create()
+    {
+        Message = null;
+        var res = await MaintenanceService.CreateAsync(CreateModel);
+        if (res.Success)
+        {
+            Message = res.Message;
+            Creating = false;
+            await Load();
+        }
+        else Message = res.Message;
+    }
+}

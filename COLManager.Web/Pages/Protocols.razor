@@ -1,0 +1,511 @@
+@page "/protocols"
+@inject COLManager.Web.Services.IProtocolService ProtocolService
+@inject COLManager.Web.Services.IAuditService AuditService
+@inject Microsoft.JSInterop.IJSRuntime JS
+
+<h3>Protocols</h3>
+
+<button class="btn btn-primary" @onclick="BeginCreate"><i class="bi bi-plus-circle"></i> New Protocol</button>
+
+@if (!string.IsNullOrEmpty(Message))
+{
+    <div class="alert alert-info alert-dismissible fade show" role="alert">
+        @Message
+        <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+    </div>
+}
+
+@if (IsLoading)
+{
+    <p><span class="spinner-border spinner-border-sm me-2"></span>Loading protocols...</p>
+}
+else if (ProtocolList == null || !ProtocolList.Any())
+{
+    <div class="alert alert-warning mt-3">
+        No protocols found. <a href="#" @onclick="BeginCreate" @onclick:preventDefault>Create one now</a>.
+    </div>
+}
+else
+{
+    <table class="table table-striped table-hover mt-3">
+        <thead class="table-dark">
+            <tr>
+                <th>ID</th>
+                <th>Name</th>
+                <th>Max Pressure (bar)</th>
+                <th>Max Hours</th>
+                <th>Max Injections</th>
+                <th>Temp (°C)</th>
+                <th>Active</th>
+                <th>Created</th>
+                <th></th>
+            </tr>
+        </thead>
+        <tbody>
+            @foreach (var p in ProtocolList)
+            {
+                <tr>
+                    <td>@p.ProtocolID</td>
+                    <td>@p.ProtocolName</td>
+                    <td>@p.MaxAllowedPressureBar</td>
+                    <td>@p.MaxAllowedUsageHours</td>
+                    <td>@p.MaxAllowedInjections</td>
+                    <td>@(p.OperatingTemperatureC?.ToString("F2") ?? "N/A")</td>
+                    <td>
+                        <span class="badge @(p.IsActive ? "bg-success" : "bg-danger")">
+                            @(p.IsActive ? "Yes" : "No")
+                        </span>
+                    </td>
+                    <td>@p.CreatedOn.ToString("yyyy-MM-dd")</td>
+                    <td>
+                        <button class="btn btn-sm btn-info me-1" @onclick="() => Edit(p.ProtocolID)" title="Edit">
+                            <i class="bi bi-pencil"></i>
+                        </button>
+                        <button class="btn btn-sm btn-secondary me-1" @onclick="() => ViewAuditTrail(p.ProtocolID)" title="View Audit Trail">
+                            <i class="bi bi-clock-history"></i>
+                        </button>
+                        <button class="btn btn-sm btn-danger" @onclick="() => ConfirmDelete(p.ProtocolID)" title="Delete">
+                            <i class="bi bi-trash"></i>
+                        </button>
+                    </td>
+                </tr>
+            }
+        </tbody>
+    </table>
+}
+
+@if (Editing)
+{
+    <div class="modal show d-block" style="background-color: rgba(0,0,0,0.5);">
+        <div class="modal-dialog">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title">@(EditId == 0 ? "Create Protocol" : "Edit Protocol")</h5>
+                    <button type="button" class="btn-close" @onclick="CancelEdit"></button>
+                </div>
+                <div class="modal-body">
+                    <EditForm Model="EditModel" OnValidSubmit="Save">
+                        <DataAnnotationsValidator />
+                        <ValidationSummary />
+
+                        <div class="mb-3">
+                            <label class="form-label">Protocol Name <span style="color:red;">*</span> @if (EditId != 0) { <span class="badge bg-secondary" title="Read-only after creation">Read-only</span> }</label>
+                            <InputText @bind-Value="EditModel.ProtocolName" class="form-control" disabled="@(EditId != 0)" />
+                            @if (EditId != 0)
+                            {
+                                <small class="text-muted">Protocol name cannot be changed after creation.</small>
+                            }
+                        </div>
+
+                        <div class="mb-3">
+                            <label class="form-label">Description</label>
+                            <InputTextArea @bind-Value="EditModel.Description" class="form-control" rows="3" />
+                        </div>
+
+                        <div class="mb-3">
+                            <label class="form-label">Max Allowed Pressure (bar) <span style="color:red;">*</span></label>
+                            <InputNumber @bind-Value="EditModel.MaxAllowedPressureBar" class="form-control" />
+                        </div>
+
+                        <div class="mb-3">
+                            <label class="form-label">Max Allowed Usage Hours</label>
+                            <InputNumber @bind-Value="EditModel.MaxAllowedUsageHours" class="form-control" />
+                        </div>
+
+                        <div class="mb-3">
+                            <label class="form-label">Max Allowed Injections</label>
+                            <InputNumber @bind-Value="EditModel.MaxAllowedInjections" class="form-control" />
+                        </div>
+
+                        <div class="mb-3">
+                            <label class="form-label">Operating Temperature (°C)</label>
+                            <InputNumber @bind-Value="EditModel.OperatingTemperatureC" class="form-control" />
+                        </div>
+
+                        <div class="modal-footer">
+                            <button type="button" class="btn btn-secondary" @onclick="CancelEdit">Cancel</button>
+                            <button type="submit" class="btn btn-primary">Save</button>
+                        </div>
+                    </EditForm>
+                </div>
+            </div>
+        </div>
+    </div>
+}
+
+@if (ShowingAuditTrail && AuditTrailList != null)
+{
+    <div class="modal show d-block" style="background-color: rgba(0,0,0,0.5);">
+        <div class="modal-dialog modal-lg">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title"><i class="bi bi-clock-history"></i> Audit Trail - @GetProtocolNameById(SelectedProtocolId)</h5>
+                    <button type="button" class="btn-close" @onclick="CloseAuditTrail"></button>
+                </div>
+                <div class="modal-body">
+                    @if (AuditTrailList.Count == 0)
+                    {
+                        <div class="alert alert-info">No audit trail entries found for this protocol.</div>
+                    }
+                    else
+                    {
+                        <div class="table-responsive">
+                            <table class="table table-sm table-striped">
+                                <thead class="table-light">
+                                    <tr>
+                                        <th>Operation</th>
+                                        <th>Changes</th>
+                                        <th>Changed On</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    @foreach (var audit in AuditTrailList)
+                                    {
+                                        <tr>
+                                            <td>
+                                                @if (audit.OperationType == "NEW")
+                                                {
+                                                    <span class="badge bg-success"><i class="bi bi-plus-circle"></i> NEW</span>
+                                                }
+                                                else
+                                                {
+                                                    <span class="badge bg-warning"><i class="bi bi-pencil"></i> MODIFY</span>
+                                                }
+                                            </td>
+                                            <td>
+                                                @if (!string.IsNullOrEmpty(audit.NewData))
+                                                {
+                                                    <button class="btn btn-xs btn-info" @onclick="() => DisplayAuditDetails(audit)" style="padding: 2px 6px; font-size: 0.75rem;">View</button>
+                                                }
+                                            </td>
+                                            <td>@audit.ChangedOn.ToString("yyyy-MM-dd HH:mm:ss")</td>
+                                        </tr>
+                                    }
+                                </tbody>
+                            </table>
+                        </div>
+                    }
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" @onclick="CloseAuditTrail">Close</button>
+                </div>
+            </div>
+        </div>
+    </div>
+}
+
+@if (ShowingAuditDetails && SelectedAuditEntry != null)
+{
+    <div class="modal show d-block" style="background-color: rgba(0,0,0,0.5); z-index: 1060;">
+        <div class="modal-dialog modal-lg">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title">Audit Details</h5>
+                    <button type="button" class="btn-close" @onclick="CloseAuditDetails"></button>
+                </div>
+                <div class="modal-body">
+                    <div class="mb-2">
+                        <strong>Operation:</strong> @SelectedAuditEntry.OperationType
+                    </div>
+                    <div class="mb-3">
+                        <strong>Changed On:</strong> @SelectedAuditEntry.ChangedOn.ToString("yyyy-MM-dd HH:mm:ss")
+                    </div>
+                    <div>
+                        @if (SelectedAuditEntry.OperationType == "NEW")
+                        {
+                            <strong>Created Fields:</strong>
+                            <div class="table-responsive mt-2">
+                                <table class="table table-sm table-bordered">
+                                    <thead class="table-light">
+                                        <tr>
+                                            <th>Field Name</th>
+                                            <th>Value</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        @if (AuditDetailsList != null && AuditDetailsList.Count > 0)
+                                        {
+                                            @foreach (var item in AuditDetailsList)
+                                            {
+                                                <tr>
+                                                    <td><strong>@item.FieldName</strong></td>
+                                                    <td>@item.NewValue</td>
+                                                </tr>
+                                            }
+                                        }
+                                    </tbody>
+                                </table>
+                            </div>
+                        }
+                        else if (SelectedAuditEntry.OperationType == "MODIFY")
+                        {
+                            <strong>Modified Fields:</strong>
+                            <div class="table-responsive mt-2">
+                                <table class="table table-sm table-bordered">
+                                    <thead class="table-light">
+                                        <tr>
+                                            <th>Field Name</th>
+                                            <th>Old Value</th>
+                                            <th>New Value</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        @if (AuditDetailsList != null && AuditDetailsList.Count > 0)
+                                        {
+                                            @foreach (var item in AuditDetailsList)
+                                            {
+                                                <tr>
+                                                    <td><strong>@item.FieldName</strong></td>
+                                                    <td>@item.OldValue</td>
+                                                    <td><span class="bg-warning bg-opacity-25 px-2 py-1 rounded">@item.NewValue</span></td>
+                                                </tr>
+                                            }
+                                        }
+                                    </tbody>
+                                </table>
+                            </div>
+                        }
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" @onclick="CloseAuditDetails">Close</button>
+                </div>
+            </div>
+        </div>
+    </div>
+}
+
+@code {
+    private IEnumerable<COLManager.Web.DTOs.ProtocolReadDto> ProtocolList = Array.Empty<COLManager.Web.DTOs.ProtocolReadDto>();
+    private bool IsLoading = true;
+    private bool Editing = false;
+    private bool ShowingAuditTrail = false;
+    private bool ShowingAuditDetails = false;
+    private string? Message;
+    private int EditId = 0;
+    private int SelectedProtocolId = 0;
+    private List<COLManager.Web.Entities.AuditTrail> AuditTrailList = new();
+    private COLManager.Web.Entities.AuditTrail? SelectedAuditEntry;
+    private List<AuditDetail> AuditDetailsList = new();
+
+    private class AuditDetail
+    {
+        public string FieldName { get; set; } = "";
+        public string? OldValue { get; set; }
+        public string? NewValue { get; set; }
+    }
+
+    private COLManager.Web.DTOs.ProtocolCreateDto EditModel = new COLManager.Web.DTOs.ProtocolCreateDto();
+
+    protected override async Task OnInitializedAsync()
+    {
+        await Load();
+    }
+
+    private async Task Load()
+    {
+        IsLoading = true;
+        Message = null;
+        var res = await ProtocolService.GetAllAsync();
+        if (res.Success)
+            ProtocolList = res.Data ?? Array.Empty<COLManager.Web.DTOs.ProtocolReadDto>();
+        else
+            Message = res.Message ?? "Failed to load protocols.";
+        IsLoading = false;
+    }
+
+    private void BeginCreate()
+    {
+        Editing = true;
+        EditModel = new COLManager.Web.DTOs.ProtocolCreateDto();
+    }
+
+    private async Task Edit(int id)
+    {
+        var res = await ProtocolService.GetByIdAsync(id);
+        if (res.Success)
+        {
+            var p = res.Data;
+            EditModel = new COLManager.Web.DTOs.ProtocolCreateDto
+            {
+                ProtocolName = p!.ProtocolName,
+                Description = p.Description,
+                MaxAllowedPressureBar = p.MaxAllowedPressureBar,
+                MaxAllowedUsageHours = p.MaxAllowedUsageHours,
+                MaxAllowedInjections = p.MaxAllowedInjections,
+                OperatingTemperatureC = p.OperatingTemperatureC
+            };
+            // Store the ID in a temporary field for update
+            EditId = id;
+            Editing = true;
+        }
+        else
+            Message = res.Message ?? "Failed to load protocol.";
+    }
+
+    private void CancelEdit()
+    {
+        Editing = false;
+        EditId = 0;
+    }
+
+    private async Task Save()
+    {
+        Message = null;
+        if (EditId == 0)
+        {
+            // Create
+            var res = await ProtocolService.CreateAsync(EditModel);
+            if (res.Success)
+            {
+                Message = res.Message ?? "Protocol created successfully.";
+                Editing = false;
+                await Load();
+            }
+            else
+                Message = res.Message ?? "Failed to create protocol.";
+        }
+        else
+        {
+            // Update
+            var res = await ProtocolService.UpdateAsync(EditId, EditModel);
+            if (res.Success)
+            {
+                Message = res.Message ?? "Protocol updated successfully.";
+                Editing = false;
+                EditId = 0;
+                await Load();
+            }
+            else
+                Message = res.Message ?? "Failed to update protocol.";
+        }
+    }
+
+    private async Task ConfirmDelete(int id)
+    {
+        var confirmed = await JS.InvokeAsync<bool>("confirmAction", "Delete this protocol? This action cannot be undone.");
+        if (!confirmed) return;
+
+        var res = await ProtocolService.DeleteAsync(id);
+        if (res.Success)
+        {
+            await JS.InvokeVoidAsync("showToast", res.Message ?? "Protocol deleted.");
+            await Load();
+        }
+        else
+        {
+            await JS.InvokeVoidAsync("showToast", res.Message ?? "Failed to delete protocol.");
+        }
+    }
+
+    private string GetProtocolNameById(int protocolId)
+    {
+        var protocol = ProtocolList.FirstOrDefault(x => x.ProtocolID == protocolId);
+        return protocol?.ProtocolName ?? $"ID: {protocolId}";
+    }
+
+    private async Task ViewAuditTrail(int protocolId)
+    {
+        SelectedProtocolId = protocolId;
+        var res = await AuditService.GetByTableAndRecordAsync("Protocol", protocolId);
+        if (res.Success)
+        {
+            AuditTrailList = (res.Data ?? Array.Empty<COLManager.Web.Entities.AuditTrail>()).ToList();
+            ShowingAuditTrail = true;
+        }
+        else
+        {
+            Message = res.Message ?? "Failed to load audit trail.";
+        }
+    }
+
+    private void CloseAuditTrail()
+    {
+        ShowingAuditTrail = false;
+        AuditTrailList.Clear();
+        SelectedProtocolId = 0;
+    }
+
+    private void DisplayAuditDetails(COLManager.Web.Entities.AuditTrail audit)
+    {
+        SelectedAuditEntry = audit;
+        AuditDetailsList = ParseAuditData(audit);
+        ShowingAuditDetails = true;
+    }
+
+    private void CloseAuditDetails()
+    {
+        ShowingAuditDetails = false;
+        SelectedAuditEntry = null;
+        AuditDetailsList.Clear();
+    }
+
+    private List<AuditDetail> ParseAuditData(COLManager.Web.Entities.AuditTrail audit)
+    {
+        var details = new List<AuditDetail>();
+
+        if (string.IsNullOrEmpty(audit.NewData))
+            return details;
+
+        try
+        {
+            using (var doc = System.Text.Json.JsonDocument.Parse(audit.NewData))
+            {
+                var root = doc.RootElement;
+
+                if (audit.OperationType == "NEW")
+                {
+                    // For NEW operations, just show field names and values
+                    foreach (var property in root.EnumerateObject())
+                    {
+                        details.Add(new AuditDetail
+                        {
+                            FieldName = property.Name,
+                            NewValue = property.Value.ToString()
+                        });
+                    }
+                }
+                else if (audit.OperationType == "MODIFY")
+                {
+                    // For MODIFY operations, each field contains Old and New
+                    foreach (var property in root.EnumerateObject())
+                    {
+                        var fieldObj = property.Value;
+                        if (fieldObj.TryGetProperty("Old", out var oldVal) && fieldObj.TryGetProperty("New", out var newVal))
+                        {
+                            details.Add(new AuditDetail
+                            {
+                                FieldName = property.Name,
+                                OldValue = oldVal.ToString(),
+                                NewValue = newVal.ToString()
+                            });
+                        }
+                    }
+                }
+            }
+        }
+        catch (Exception)
+        {
+            // If parsing fails, return empty list
+        }
+
+        return details;
+    }
+
+    private string FormatJson(string? json)
+    {
+        if (string.IsNullOrEmpty(json))
+            return "No data";
+
+        try
+        {
+            var options = new System.Text.Json.JsonSerializerOptions { WriteIndented = true };
+            var document = System.Text.Json.JsonDocument.Parse(json);
+            return System.Text.Json.JsonSerializer.Serialize(document.RootElement, options);
+        }
+        catch
+        {
+            return json;
+        }
+    }
+}

@@ -1,0 +1,326 @@
+@page "/audittrail"
+@inject COLManager.Web.Services.IAuditService AuditService
+
+<h3>Audit Trail</h3>
+
+<div class="alert alert-info">
+    <i class="bi bi-info-circle"></i> Showing all audit trail entries for Columns and Protocols. Entries are automatically recorded when data is created or modified.
+</div>
+
+@if (IsLoading)
+{
+    <p class="mt-3"><span class="spinner-border spinner-border-sm me-2"></span>Loading audit trail...</p>
+}
+else if (AuditList == null || !AuditList.Any())
+{
+    <div class="alert alert-warning mt-3">
+        No audit trail entries found.
+    </div>
+}
+else
+{
+    <div class="table-responsive">
+        <table class="table table-striped table-hover mt-3">
+            <thead class="table-dark">
+                <tr>
+                    <th>Audit ID</th>
+                    <th>Table</th>
+                    <th>Record ID</th>
+                    <th>Operation</th>
+                    <th>Changes</th>
+                    <th>Changed By</th>
+                    <th>Changed On</th>
+                </tr>
+            </thead>
+            <tbody>
+                @foreach (var audit in AuditList)
+                {
+                    <tr>
+                        <td>@audit.AuditID</td>
+                        <td>
+                            <span class="badge bg-secondary">@audit.TableName</span>
+                        </td>
+                        <td>
+                            <span class="badge bg-info">@GetRecordDisplayName(audit)</span>
+                        </td>
+                        <td>
+                            @if (audit.OperationType == "NEW")
+                            {
+                                <span class="badge bg-success"><i class="bi bi-plus-circle"></i> NEW</span>
+                            }
+                            else if (audit.OperationType == "MODIFY")
+                            {
+                                <span class="badge bg-warning"><i class="bi bi-pencil"></i> MODIFY</span>
+                            }
+                            else
+                            {
+                                <span class="badge bg-danger"><i class="bi bi-trash"></i> @audit.OperationType</span>
+                            }
+                        </td>
+                        <td>
+                            @if (!string.IsNullOrEmpty(audit.NewData))
+                            {
+                                <button class="btn btn-sm btn-info" @onclick="() => ShowDetails(audit)">
+                                    <i class="bi bi-eye"></i> View
+                                </button>
+                            }
+                            else
+                            {
+                                <span class="text-muted">-</span>
+                            }
+                        </td>
+                        <td>@audit.ChangedBy</td>
+                        <td>@audit.ChangedOn.ToString("yyyy-MM-dd HH:mm:ss")</td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+    </div>
+}
+
+@if (ShowDetailsModal && SelectedAudit != null)
+{
+    <div class="modal show d-block" style="background-color: rgba(0,0,0,0.5);">
+        <div class="modal-dialog modal-lg">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title">
+                        @SelectedAudit.TableName - 
+                        @if (SelectedAudit.OperationType == "NEW")
+                        {
+                            <span class="badge bg-success">NEW</span>
+                        }
+                        else
+                        {
+                            <span class="badge bg-warning">MODIFY</span>
+                        }
+                        - @GetRecordDisplayName(SelectedAudit)
+                    </h5>
+                    <button type="button" class="btn-close" @onclick="CloseDetails"></button>
+                </div>
+                <div class="modal-body">
+                    <div class="mb-3">
+                        <label class="form-label"><strong>Audit ID:</strong></label>
+                        <p>@SelectedAudit.AuditID</p>
+                    </div>
+
+                    <div class="mb-3">
+                        <label class="form-label"><strong>Changed By:</strong></label>
+                        <p>@SelectedAudit.ChangedBy</p>
+                    </div>
+
+                    <div class="mb-3">
+                        <label class="form-label"><strong>Changed On:</strong></label>
+                        <p>@SelectedAudit.ChangedOn.ToString("yyyy-MM-dd HH:mm:ss")</p>
+                    </div>
+
+                    @if (SelectedAudit.OperationType == "NEW")
+                    {
+                        <div class="mb-3">
+                            <label class="form-label"><strong>Created Fields:</strong></label>
+                            <div class="table-responsive">
+                                <table class="table table-sm table-bordered">
+                                    <thead class="table-light">
+                                        <tr>
+                                            <th>Field Name</th>
+                                            <th>Value</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        @if (DetailsList != null && DetailsList.Count > 0)
+                                        {
+                                            @foreach (var item in DetailsList)
+                                            {
+                                                <tr>
+                                                    <td><strong>@item.FieldName</strong></td>
+                                                    <td>@item.NewValue</td>
+                                                </tr>
+                                            }
+                                        }
+                                    </tbody>
+                                </table>
+                            </div>
+                        </div>
+                    }
+                    else if (SelectedAudit.OperationType == "MODIFY")
+                    {
+                        <div class="mb-3">
+                            <label class="form-label"><strong>Modified Fields:</strong></label>
+                            <div class="table-responsive">
+                                <table class="table table-sm table-bordered">
+                                    <thead class="table-light">
+                                        <tr>
+                                            <th>Field Name</th>
+                                            <th>Old Value</th>
+                                            <th>New Value</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        @if (DetailsList != null && DetailsList.Count > 0)
+                                        {
+                                            @foreach (var item in DetailsList)
+                                            {
+                                                <tr>
+                                                    <td><strong>@item.FieldName</strong></td>
+                                                    <td>@item.OldValue</td>
+                                                    <td><span class="bg-warning bg-opacity-25 px-2 py-1 rounded">@item.NewValue</span></td>
+                                                </tr>
+                                            }
+                                        }
+                                    </tbody>
+                                </table>
+                            </div>
+                        </div>
+                    }
+
+                    <div class="modal-footer">
+                        <button type="button" class="btn btn-secondary" @onclick="CloseDetails">Close</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+}
+
+@code {
+    private IEnumerable<COLManager.Web.Entities.AuditTrail> AuditList = Array.Empty<COLManager.Web.Entities.AuditTrail>();
+    private bool IsLoading = true;
+    private bool ShowDetailsModal = false;
+    private COLManager.Web.Entities.AuditTrail? SelectedAudit;
+    private List<AuditDetail> DetailsList = new();
+
+    private class AuditDetail
+    {
+        public string FieldName { get; set; } = "";
+        public string? OldValue { get; set; }
+        public string? NewValue { get; set; }
+    }
+
+    protected override async Task OnInitializedAsync()
+    {
+        await Load();
+    }
+
+    private async Task Load()
+    {
+        IsLoading = true;
+        var res = await AuditService.GetAllAsync();
+        if (res.Success)
+        {
+            // Filter for only Column_Master and Protocol entries
+            AuditList = (res.Data ?? Array.Empty<COLManager.Web.Entities.AuditTrail>())
+                .Where(a => a.TableName == "Column_Master" || a.TableName == "Protocol")
+                .OrderByDescending(a => a.ChangedOn)
+                .ToList();
+        }
+        IsLoading = false;
+    }
+
+    private void ShowDetails(COLManager.Web.Entities.AuditTrail audit)
+    {
+        SelectedAudit = audit;
+        DetailsList = ParseAuditData(audit);
+        ShowDetailsModal = true;
+    }
+
+    private void CloseDetails()
+    {
+        ShowDetailsModal = false;
+        SelectedAudit = null;
+        DetailsList.Clear();
+    }
+
+    private List<AuditDetail> ParseAuditData(COLManager.Web.Entities.AuditTrail audit)
+    {
+        var details = new List<AuditDetail>();
+
+        if (string.IsNullOrEmpty(audit.NewData))
+            return details;
+
+        try
+        {
+            using (var doc = System.Text.Json.JsonDocument.Parse(audit.NewData))
+            {
+                var root = doc.RootElement;
+
+                if (audit.OperationType == "NEW")
+                {
+                    // For NEW operations, just show field names and values
+                    foreach (var property in root.EnumerateObject())
+                    {
+                        details.Add(new AuditDetail
+                        {
+                            FieldName = property.Name,
+                            NewValue = property.Value.ToString()
+                        });
+                    }
+                }
+                else if (audit.OperationType == "MODIFY")
+                {
+                    // For MODIFY operations, each field contains Old and New
+                    foreach (var property in root.EnumerateObject())
+                    {
+                        var fieldObj = property.Value;
+                        if (fieldObj.TryGetProperty("Old", out var oldVal) && fieldObj.TryGetProperty("New", out var newVal))
+                        {
+                            details.Add(new AuditDetail
+                            {
+                                FieldName = property.Name,
+                                OldValue = oldVal.ToString(),
+                                NewValue = newVal.ToString()
+                            });
+                        }
+                    }
+                }
+            }
+        }
+        catch (Exception)
+        {
+            // If parsing fails, return empty list
+        }
+
+        return details;
+    }
+
+    private string GetRecordDisplayName(COLManager.Web.Entities.AuditTrail audit)
+    {
+        string nameFieldKey = audit.TableName == "Column_Master" ? "ColumnName" : "ProtocolName";
+        string? displayName = null;
+
+        // Try to get the name from NewData first
+        if (!string.IsNullOrEmpty(audit.NewData))
+        {
+            displayName = ExtractNameFromJson(audit.NewData, nameFieldKey);
+        }
+
+        // If not found in NewData and it's a MODIFY operation, try OldData
+        if (string.IsNullOrEmpty(displayName) && !string.IsNullOrEmpty(audit.OldData) && audit.OperationType == "MODIFY")
+        {
+            displayName = ExtractNameFromJson(audit.OldData, nameFieldKey);
+        }
+
+        return !string.IsNullOrEmpty(displayName) ? displayName : $"ID: {audit.RecordID}";
+    }
+
+    private string? ExtractNameFromJson(string jsonData, string nameField)
+    {
+        try
+        {
+            using (var doc = System.Text.Json.JsonDocument.Parse(jsonData))
+            {
+                var root = doc.RootElement;
+
+                if (root.TryGetProperty(nameField, out var nameValue))
+                {
+                    return nameValue.GetString();
+                }
+            }
+        }
+        catch (Exception)
+        {
+            // If parsing fails, return null
+        }
+
+        return null;
+    }
+}

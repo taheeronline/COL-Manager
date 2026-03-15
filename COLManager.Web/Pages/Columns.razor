@@ -1,0 +1,634 @@
+@page "/columns"
+@inject COLManager.Web.Services.IColumnService ColumnService
+@inject COLManager.Web.Services.IProtocolService ProtocolService
+@inject COLManager.Web.Services.IStatusService StatusService
+@inject COLManager.Web.Services.IAuditService AuditService
+@inject Microsoft.JSInterop.IJSRuntime JS
+
+<h3>Columns</h3>
+
+<button class="btn btn-primary" @onclick="BeginCreate"><i class="bi bi-plus-circle"></i> New Column</button>
+
+@if (!string.IsNullOrEmpty(Message))
+{
+    <div class="alert alert-info alert-dismissible fade show mt-3" role="alert">
+        @Message
+        <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+    </div>
+}
+
+@if (IsLoading)
+{
+    <p class="mt-3"><span class="spinner-border spinner-border-sm me-2"></span>Loading columns...</p>
+}
+else if (ColumnList == null || !ColumnList.Any())
+{
+    <div class="alert alert-warning mt-3">
+        No columns found. <a href="#" @onclick="BeginCreate" @onclick:preventDefault>Create one now</a>.
+    </div>
+}
+else
+{
+    <table class="table table-striped table-hover mt-3">
+        <thead class="table-dark">
+            <tr>
+                <th>ID</th>
+                <th>Name</th>
+                <th>Manufacturer</th>
+                <th>Serial</th>
+                <th>Protocol</th>
+                <th>Status</th>
+                <th>Runtime (h)</th>
+                <th>Injections</th>
+                <th>Created</th>
+                <th></th>
+            </tr>
+        </thead>
+        <tbody>
+            @foreach (var c in ColumnList)
+            {
+                <tr>
+                    <td>@c.ColumnID</td>
+                    <td><strong>@c.ColumnName</strong></td>
+                    <td>@c.Manufacturer</td>
+                    <td><code>@c.SerialNumber</code></td>
+                    <td>
+                        @if (string.IsNullOrEmpty(GetProtocolName(c.ProtocolID)))
+                        {
+                            <span class="badge bg-secondary">None</span>
+                        }
+                        else
+                        {
+                            <span class="badge bg-info">@GetProtocolName(c.ProtocolID)</span>
+                        }
+                    </td>
+                    <td>
+                        <span class="badge bg-primary">@GetStatusName(c.StatusID)</span>
+                    </td>
+                    <td>@c.TotalRuntimeHours</td>
+                    <td>@c.TotalInjections</td>
+                    <td>@c.CreatedOn.ToString("yyyy-MM-dd")</td>
+                    <td>
+                        <button class="btn btn-sm btn-info me-1" @onclick="() => Edit(c.ColumnID)" title="Edit">
+                            <i class="bi bi-pencil"></i>
+                        </button>
+                        <button class="btn btn-sm btn-secondary me-1" @onclick="() => ViewAuditTrail(c.ColumnID)" title="View Audit Trail">
+                            <i class="bi bi-clock-history"></i>
+                        </button>
+                        <button class="btn btn-sm btn-danger" @onclick="() => ConfirmDelete(c.ColumnID)" title="Delete">
+                            <i class="bi bi-trash"></i>
+                        </button>
+                    </td>
+                </tr>
+            }
+        </tbody>
+    </table>
+}
+
+@if (Editing)
+{
+    <div class="modal show d-block" style="background-color: rgba(0,0,0,0.5);">
+        <div class="modal-dialog modal-lg">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title">@(EditId == 0 ? "Create Column" : "Edit Column")</h5>
+                    <button type="button" class="btn-close" @onclick="CancelEdit"></button>
+                </div>
+                <div class="modal-body">
+                    @if (Statuses == null || !Statuses.Any())
+                    {
+                        <div class="alert alert-warning">
+                            <strong>No statuses available.</strong> Please create at least one status first. <a href="/status" target="_blank">Go to Status page</a>.
+                        </div>
+                    }
+                    else
+                    {
+                        <EditForm Model="EditModel" OnValidSubmit="Save">
+                            <DataAnnotationsValidator />
+                            <ValidationSummary />
+
+                            <div class="row">
+                                <div class="col-md-6 mb-3">
+                                    <label class="form-label">Column Name <span style="color:red;">*</span> @if (EditId != 0) { <span class="badge bg-secondary" title="Read-only after creation">Read-only</span> }</label>
+                                    <InputText @bind-Value="EditModel.ColumnName" class="form-control" disabled="@(EditId != 0)" />
+                                    @if (EditId != 0)
+                                    {
+                                        <small class="text-muted">Column name cannot be changed after creation.</small>
+                                    }
+                                </div>
+                                <div class="col-md-6 mb-3">
+                                    <label class="form-label">Manufacturer <span style="color:red;">*</span></label>
+                                    <InputText @bind-Value="EditModel.Manufacturer" class="form-control" />
+                                </div>
+                            </div>
+
+                            <div class="row">
+                                <div class="col-md-6 mb-3">
+                                    <label class="form-label">Serial Number <span style="color:red;">*</span></label>
+                                    <InputText @bind-Value="EditModel.SerialNumber" class="form-control" />
+                                </div>
+                                <div class="col-md-6 mb-3">
+                                    <label class="form-label">Status <span style="color:red;">*</span></label>
+                                    <InputSelect @bind-Value="EditModel.StatusID" class="form-select" TValue="int">
+                                        <option value="0">-- Select Status --</option>
+                                        @foreach (var s in Statuses)
+                                        {
+                                            <option value="@s.StatusID">@s.StatusName</option>
+                                        }
+                                    </InputSelect>
+                                </div>
+                            </div>
+
+                            <div class="row">
+                                <div class="col-md-6 mb-3">
+                                    <label class="form-label">Protocol (Optional)</label>
+                                    <InputSelect @bind-Value="EditModel.ProtocolID" class="form-select" TValue="int?">
+                                        <option value="">-- No Protocol --</option>
+                                        @foreach (var p in Protocols)
+                                        {
+                                            <option value="@p.ProtocolID">@p.ProtocolName</option>
+                                        }
+                                    </InputSelect>
+                                </div>
+                                <div class="col-md-6 mb-3">
+                                    <label class="form-label">Length (mm) <span style="color:red;">*</span></label>
+                                    <InputNumber @bind-Value="EditModel.LengthMM" class="form-control" />
+                                </div>
+                            </div>
+
+                            <div class="row">
+                                <div class="col-md-6 mb-3">
+                                    <label class="form-label">Internal Diameter (mm) <span style="color:red;">*</span></label>
+                                    <InputNumber @bind-Value="EditModel.InternalDiameterMM" class="form-control" />
+                                </div>
+                                <div class="col-md-6 mb-3">
+                                    <label class="form-label">Particle Size (micron) <span style="color:red;">*</span></label>
+                                    <InputNumber @bind-Value="EditModel.ParticleSizeMicron" class="form-control" />
+                                </div>
+                            </div>
+
+                            <div class="row">
+                                <div class="col-md-6 mb-3">
+                                    <label class="form-label">Max Pressure (bar) <span style="color:red;">*</span></label>
+                                    <InputNumber @bind-Value="EditModel.MaxPressureBar" class="form-control" />
+                                </div>
+                                <div class="col-md-6 mb-3">
+                                    <label class="form-label">Total Runtime Hours</label>
+                                    <InputNumber @bind-Value="EditModel.TotalRuntimeHours" class="form-control" />
+                                </div>
+                            </div>
+
+                            <div class="row">
+                                <div class="col-md-6 mb-3">
+                                    <label class="form-label">Total Injections</label>
+                                    <InputNumber @bind-Value="EditModel.TotalInjections" class="form-control" />
+                                </div>
+                            </div>
+
+                            <div class="modal-footer">
+                                <button type="button" class="btn btn-secondary" @onclick="CancelEdit">Cancel</button>
+                                <button type="submit" class="btn btn-primary">@(EditId == 0 ? "Create" : "Update")</button>
+                            </div>
+                        </EditForm>
+                    }
+                </div>
+            </div>
+        </div>
+    </div>
+}
+
+@if (ShowingAuditTrail && AuditTrailList != null)
+{
+    <div class="modal show d-block" style="background-color: rgba(0,0,0,0.5);">
+        <div class="modal-dialog modal-lg">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title"><i class="bi bi-clock-history"></i> Audit Trail - @GetColumnNameById(SelectedColumnId)</h5>
+                    <button type="button" class="btn-close" @onclick="CloseAuditTrail"></button>
+                </div>
+                <div class="modal-body">
+                    @if (AuditTrailList.Count == 0)
+                    {
+                        <div class="alert alert-info">No audit trail entries found for this column.</div>
+                    }
+                    else
+                    {
+                        <div class="table-responsive">
+                            <table class="table table-sm table-striped">
+                                <thead class="table-light">
+                                    <tr>
+                                        <th>Operation</th>
+                                        <th>Changes</th>
+                                        <th>Changed On</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    @foreach (var audit in AuditTrailList)
+                                    {
+                                        <tr>
+                                            <td>
+                                                @if (audit.OperationType == "NEW")
+                                                {
+                                                    <span class="badge bg-success"><i class="bi bi-plus-circle"></i> NEW</span>
+                                                }
+                                                else
+                                                {
+                                                    <span class="badge bg-warning"><i class="bi bi-pencil"></i> MODIFY</span>
+                                                }
+                                            </td>
+                                            <td>
+                                                @if (!string.IsNullOrEmpty(audit.NewData))
+                                                {
+                                                    <button class="btn btn-xs btn-info" @onclick="() => DisplayAuditDetails(audit)" style="padding: 2px 6px; font-size: 0.75rem;">View</button>
+                                                }
+                                            </td>
+                                            <td>@audit.ChangedOn.ToString("yyyy-MM-dd HH:mm:ss")</td>
+                                        </tr>
+                                    }
+                                </tbody>
+                            </table>
+                        </div>
+                    }
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" @onclick="CloseAuditTrail">Close</button>
+                </div>
+            </div>
+        </div>
+    </div>
+}
+
+@if (ShowingAuditDetails && SelectedAuditEntry != null)
+{
+    <div class="modal show d-block" style="background-color: rgba(0,0,0,0.5); z-index: 1060;">
+        <div class="modal-dialog modal-lg">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title">Audit Details</h5>
+                    <button type="button" class="btn-close" @onclick="CloseAuditDetails"></button>
+                </div>
+                <div class="modal-body">
+                    <div class="mb-2">
+                        <strong>Operation:</strong> @SelectedAuditEntry.OperationType
+                    </div>
+                    <div class="mb-3">
+                        <strong>Changed On:</strong> @SelectedAuditEntry.ChangedOn.ToString("yyyy-MM-dd HH:mm:ss")
+                    </div>
+                    <div>
+                        @if (SelectedAuditEntry.OperationType == "NEW")
+                        {
+                            <strong>Created Fields:</strong>
+                            <div class="table-responsive mt-2">
+                                <table class="table table-sm table-bordered">
+                                    <thead class="table-light">
+                                        <tr>
+                                            <th>Field Name</th>
+                                            <th>Value</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        @if (AuditDetailsList != null && AuditDetailsList.Count > 0)
+                                        {
+                                            @foreach (var item in AuditDetailsList)
+                                            {
+                                                <tr>
+                                                    <td><strong>@item.FieldName</strong></td>
+                                                    <td>@item.NewValue</td>
+                                                </tr>
+                                            }
+                                        }
+                                    </tbody>
+                                </table>
+                            </div>
+                        }
+                        else if (SelectedAuditEntry.OperationType == "MODIFY")
+                        {
+                            <strong>Modified Fields:</strong>
+                            <div class="table-responsive mt-2">
+                                <table class="table table-sm table-bordered">
+                                    <thead class="table-light">
+                                        <tr>
+                                            <th>Field Name</th>
+                                            <th>Old Value</th>
+                                            <th>New Value</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        @if (AuditDetailsList != null && AuditDetailsList.Count > 0)
+                                        {
+                                            @foreach (var item in AuditDetailsList)
+                                            {
+                                                <tr>
+                                                    <td><strong>@item.FieldName</strong></td>
+                                                    <td>@item.OldValue</td>
+                                                    <td><span class="bg-warning bg-opacity-25 px-2 py-1 rounded">@item.NewValue</span></td>
+                                                </tr>
+                                            }
+                                        }
+                                    </tbody>
+                                </table>
+                            </div>
+                        }
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" @onclick="CloseAuditDetails">Close</button>
+                </div>
+            </div>
+        </div>
+    </div>
+}
+
+@code {
+    private IEnumerable<COLManager.Web.DTOs.ColumnMasterReadDto> ColumnList = Array.Empty<COLManager.Web.DTOs.ColumnMasterReadDto>();
+    private IEnumerable<COLManager.Web.DTOs.ProtocolReadDto> Protocols = Array.Empty<COLManager.Web.DTOs.ProtocolReadDto>();
+    private IEnumerable<COLManager.Web.Entities.StatusMaster> Statuses = Array.Empty<COLManager.Web.Entities.StatusMaster>();
+    private bool IsLoading = true;
+    private bool Editing = false;
+    private bool ShowingAuditTrail = false;
+    private bool ShowingAuditDetails = false;
+    private string? Message;
+    private int EditId = 0;
+    private int SelectedColumnId = 0;
+    private List<COLManager.Web.Entities.AuditTrail> AuditTrailList = new();
+    private COLManager.Web.Entities.AuditTrail? SelectedAuditEntry;
+    private List<AuditDetail> AuditDetailsList = new();
+
+    private class AuditDetail
+    {
+        public string FieldName { get; set; } = "";
+        public string? OldValue { get; set; }
+        public string? NewValue { get; set; }
+    }
+
+    private COLManager.Web.DTOs.ColumnMasterCreateDto EditModel = new COLManager.Web.DTOs.ColumnMasterCreateDto();
+
+    protected override async Task OnInitializedAsync()
+    {
+        await Load();
+    }
+
+    private async Task Load()
+    {
+        IsLoading = true;
+        Message = null;
+
+        // Load protocols
+        var protRes = await ProtocolService.GetAllAsync();
+        if (protRes.Success)
+            Protocols = protRes.Data ?? Array.Empty<COLManager.Web.DTOs.ProtocolReadDto>();
+
+        // Load statuses
+        var statRes = await StatusService.GetAllAsync();
+        if (statRes.Success)
+            Statuses = statRes.Data ?? Array.Empty<COLManager.Web.Entities.StatusMaster>();
+
+        // Load columns
+        var res = await ColumnService.GetAllAsync();
+        if (res.Success)
+        {
+            ColumnList = res.Data ?? Array.Empty<COLManager.Web.DTOs.ColumnMasterReadDto>();
+        }
+        else
+        {
+            Message = res.Message ?? "Failed to load columns.";
+        }
+        IsLoading = false;
+    }
+
+    private string GetProtocolName(int? protocolId)
+    {
+        if (!protocolId.HasValue)
+            return "";
+        var p = Protocols.FirstOrDefault(x => x.ProtocolID == protocolId.Value);
+        return p?.ProtocolName ?? "";
+    }
+
+    private string GetStatusName(int statusId)
+    {
+        var s = Statuses.FirstOrDefault(x => x.StatusID == statusId);
+        return s?.StatusName ?? statusId.ToString();
+    }
+
+    private string GetColumnNameById(int columnId)
+    {
+        var column = ColumnList.FirstOrDefault(x => x.ColumnID == columnId);
+        return column?.ColumnName ?? $"ID: {columnId}";
+    }
+
+    private void BeginCreate()
+    {
+        if (Statuses == null || !Statuses.Any())
+        {
+            Message = "Please create at least one status before creating columns.";
+            return;
+        }
+        Editing = true;
+        EditId = 0;
+        EditModel = new COLManager.Web.DTOs.ColumnMasterCreateDto();
+    }
+
+    private async Task Edit(int id)
+    {
+        var res = await ColumnService.GetByIdAsync(id);
+        if (res.Success)
+        {
+            var c = res.Data;
+            EditModel = new COLManager.Web.DTOs.ColumnMasterCreateDto
+            {
+                ColumnName = c!.ColumnName,
+                Manufacturer = c.Manufacturer,
+                SerialNumber = c.SerialNumber,
+                LengthMM = c.LengthMM,
+                InternalDiameterMM = c.InternalDiameterMM,
+                ParticleSizeMicron = c.ParticleSizeMicron,
+                MaxPressureBar = c.MaxPressureBar,
+                ProtocolID = c.ProtocolID,
+                StatusID = c.StatusID,
+                TotalRuntimeHours = c.TotalRuntimeHours,
+                TotalInjections = c.TotalInjections,
+                RetiredOn = c.RetiredOn
+            };
+            EditId = id;
+            Editing = true;
+        }
+        else
+            Message = res.Message ?? "Failed to load column.";
+    }
+
+    private void CancelEdit()
+    {
+        Editing = false;
+        EditId = 0;
+    }
+
+    private async Task Save()
+    {
+        Message = null;
+        if (EditId == 0)
+        {
+            // Create
+            var res = await ColumnService.CreateAsync(EditModel);
+            if (res.Success)
+            {
+                Message = res.Message ?? "Column created successfully.";
+                Editing = false;
+                await Load();
+            }
+            else
+                Message = res.Message ?? "Failed to create column.";
+        }
+        else
+        {
+            // Update
+            var updateDto = new COLManager.Web.DTOs.ColumnMasterUpdateDto
+            {
+                ColumnID = EditId,
+                ColumnName = EditModel.ColumnName,
+                Manufacturer = EditModel.Manufacturer,
+                SerialNumber = EditModel.SerialNumber,
+                LengthMM = EditModel.LengthMM,
+                InternalDiameterMM = EditModel.InternalDiameterMM,
+                ParticleSizeMicron = EditModel.ParticleSizeMicron,
+                MaxPressureBar = EditModel.MaxPressureBar,
+                ProtocolID = EditModel.ProtocolID,
+                StatusID = EditModel.StatusID,
+                TotalRuntimeHours = EditModel.TotalRuntimeHours,
+                TotalInjections = EditModel.TotalInjections,
+                RetiredOn = EditModel.RetiredOn
+            };
+            var res = await ColumnService.UpdateAsync(updateDto);
+            if (res.Success)
+            {
+                Message = res.Message ?? "Column updated successfully.";
+                Editing = false;
+                EditId = 0;
+                await Load();
+            }
+            else
+                Message = res.Message ?? "Failed to update column.";
+        }
+    }
+
+    private async Task ConfirmDelete(int id)
+    {
+        var confirmed = await JS.InvokeAsync<bool>("confirmAction", "Delete this column? This action cannot be undone.");
+        if (!confirmed) return;
+
+        var res = await ColumnService.DeleteAsync(id);
+        if (res.Success)
+        {
+            await JS.InvokeVoidAsync("showToast", res.Message ?? "Column deleted.");
+            await Load();
+        }
+        else
+        {
+            await JS.InvokeVoidAsync("showToast", res.Message ?? "Failed to delete column.");
+        }
+    }
+
+    private async Task ViewAuditTrail(int columnId)
+    {
+        SelectedColumnId = columnId;
+        var res = await AuditService.GetByTableAndRecordAsync("Column_Master", columnId);
+        if (res.Success)
+        {
+            AuditTrailList = (res.Data ?? Array.Empty<COLManager.Web.Entities.AuditTrail>()).ToList();
+            ShowingAuditTrail = true;
+        }
+        else
+        {
+            Message = res.Message ?? "Failed to load audit trail.";
+        }
+    }
+
+    private void CloseAuditTrail()
+    {
+        ShowingAuditTrail = false;
+        AuditTrailList.Clear();
+        SelectedColumnId = 0;
+    }
+
+    private void DisplayAuditDetails(COLManager.Web.Entities.AuditTrail audit)
+    {
+        SelectedAuditEntry = audit;
+        AuditDetailsList = ParseAuditData(audit);
+        ShowingAuditDetails = true;
+    }
+
+    private void CloseAuditDetails()
+    {
+        ShowingAuditDetails = false;
+        SelectedAuditEntry = null;
+        AuditDetailsList.Clear();
+    }
+
+    private List<AuditDetail> ParseAuditData(COLManager.Web.Entities.AuditTrail audit)
+    {
+        var details = new List<AuditDetail>();
+
+        if (string.IsNullOrEmpty(audit.NewData))
+            return details;
+
+        try
+        {
+            using (var doc = System.Text.Json.JsonDocument.Parse(audit.NewData))
+            {
+                var root = doc.RootElement;
+
+                if (audit.OperationType == "NEW")
+                {
+                    // For NEW operations, just show field names and values
+                    foreach (var property in root.EnumerateObject())
+                    {
+                        details.Add(new AuditDetail
+                        {
+                            FieldName = property.Name,
+                            NewValue = property.Value.ToString()
+                        });
+                    }
+                }
+                else if (audit.OperationType == "MODIFY")
+                {
+                    // For MODIFY operations, each field contains Old and New
+                    foreach (var property in root.EnumerateObject())
+                    {
+                        var fieldObj = property.Value;
+                        if (fieldObj.TryGetProperty("Old", out var oldVal) && fieldObj.TryGetProperty("New", out var newVal))
+                        {
+                            details.Add(new AuditDetail
+                            {
+                                FieldName = property.Name,
+                                OldValue = oldVal.ToString(),
+                                NewValue = newVal.ToString()
+                            });
+                        }
+                    }
+                }
+            }
+        }
+        catch (Exception)
+        {
+            // If parsing fails, return empty list
+        }
+
+        return details;
+    }
+
+    private string FormatJson(string? json)
+    {
+        if (string.IsNullOrEmpty(json))
+            return "No data";
+
+        try
+        {
+            var options = new System.Text.Json.JsonSerializerOptions { WriteIndented = true };
+            var document = System.Text.Json.JsonDocument.Parse(json);
+            return System.Text.Json.JsonSerializer.Serialize(document.RootElement, options);
+        }
+        catch
+        {
+            return json;
+        }
+    }
+}
