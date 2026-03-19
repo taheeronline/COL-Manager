@@ -3,7 +3,6 @@ using COLManager.Web.Services;
 using COLManager.Web.Services.Implementations;
 using Microsoft.EntityFrameworkCore;
 using Serilog;
-using Serilog.Events;
 
 var builder = WebApplication.CreateBuilder(args);
 

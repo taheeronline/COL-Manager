@@ -4,6 +4,7 @@ using COLManager.Web.Data;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.EntityFrameworkCore.Metadata;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 
 #nullable disable
@@ -11,9 +12,11 @@ using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 namespace COLManager.Web.Migrations
 {
     [DbContext(typeof(ApplicationDbContext))]
-    partial class ApplicationDbContextModelSnapshot : ModelSnapshot
+    [Migration("20260319160605_CheckoutCheckinUpdated")]
+    partial class CheckoutCheckinUpdated
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
@@ -161,6 +164,65 @@ namespace COLManager.Web.Migrations
                     b.ToTable("Column_Master", (string)null);
                 });
 
+            modelBuilder.Entity("COLManager.Web.Entities.ColumnUsageLog", b =>
+                {
+                    b.Property<int>("UsageID")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("int");
+
+                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<int>("UsageID"));
+
+                    b.Property<DateTime?>("CheckinDate")
+                        .HasColumnType("datetime2");
+
+                    b.Property<DateTime?>("CheckoutDate")
+                        .HasColumnType("datetime2");
+
+                    b.Property<int>("ColumnID")
+                        .HasColumnType("int");
+
+                    b.Property<decimal?>("FlowRateMLPerMin")
+                        .HasColumnType("decimal(10,3)");
+
+                    b.Property<decimal?>("InjectionVolumeML")
+                        .HasColumnType("decimal(10,4)");
+
+                    b.Property<decimal?>("MaxPressureObservedBar")
+                        .HasColumnType("decimal(10,2)");
+
+                    b.Property<int?>("NumberOfInjections")
+                        .HasColumnType("int");
+
+                    b.Property<decimal?>("PostUseBackPressureBar")
+                        .HasColumnType("decimal(10,2)");
+
+                    b.Property<decimal?>("PreUseBackPressureBar")
+                        .HasColumnType("decimal(10,2)");
+
+                    b.Property<string>("ProtocolName")
+                        .HasMaxLength(200)
+                        .HasColumnType("nvarchar(200)");
+
+                    b.Property<string>("Remarks")
+                        .HasMaxLength(500)
+                        .HasColumnType("nvarchar(500)");
+
+                    b.Property<DateTime?>("RunDate")
+                        .HasColumnType("datetime2");
+
+                    b.Property<decimal?>("RuntimeHours")
+                        .HasColumnType("decimal(10,2)");
+
+                    b.Property<string>("Status")
+                        .IsRequired()
+                        .HasMaxLength(50)
+                        .HasColumnType("nvarchar(50)");
+
+                    b.HasKey("UsageID");
+
+                    b.ToTable("Column_Usage_Log", (string)null);
+                });
+
             modelBuilder.Entity("COLManager.Web.Entities.MeasurementType", b =>
                 {
                     b.Property<int>("MeasurementTypeID")
@@ -272,80 +334,12 @@ namespace COLManager.Web.Migrations
                     b.ToTable("Unit_Master", (string)null);
                 });
 
-            modelBuilder.Entity("ColumnUsageLog", b =>
-                {
-                    b.Property<int>("UsageID")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("int");
-
-                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<int>("UsageID"));
-
-                    b.Property<DateTime?>("CheckinDate")
-                        .HasColumnType("datetime2");
-
-                    b.Property<DateTime?>("CheckoutDate")
-                        .HasColumnType("datetime2");
-
-                    b.Property<int>("ColumnID")
-                        .HasColumnType("int");
-
-                    b.Property<decimal?>("FlowRateMLPerMin")
-                        .HasColumnType("decimal(10,3)");
-
-                    b.Property<decimal?>("InjectionVolumeML")
-                        .HasColumnType("decimal(10,4)");
-
-                    b.Property<decimal?>("MaxPressureObservedBar")
-                        .HasColumnType("decimal(10,2)");
-
-                    b.Property<int?>("NumberOfInjections")
-                        .HasColumnType("int");
-
-                    b.Property<decimal?>("PostUseBackPressureBar")
-                        .HasColumnType("decimal(10,2)");
-
-                    b.Property<decimal?>("PreUseBackPressureBar")
-                        .HasColumnType("decimal(10,2)");
-
-                    b.Property<string>("Remarks")
-                        .HasMaxLength(500)
-                        .HasColumnType("nvarchar(500)");
-
-                    b.Property<DateTime?>("RunDate")
-                        .HasColumnType("datetime2");
-
-                    b.Property<decimal?>("RuntimeHours")
-                        .HasColumnType("decimal(10,2)");
-
-                    b.Property<string>("Status")
-                        .IsRequired()
-                        .HasMaxLength(50)
-                        .HasColumnType("nvarchar(50)");
-
-                    b.HasKey("UsageID");
-
-                    b.HasIndex("ColumnID");
-
-                    b.ToTable("Column_Usage_Log", (string)null);
-                });
-
             modelBuilder.Entity("COLManager.Web.Entities.ColumnMaster", b =>
                 {
                     b.HasOne("COLManager.Web.Entities.Protocol", null)
                         .WithMany()
                         .HasForeignKey("ProtocolID")
                         .OnDelete(DeleteBehavior.SetNull);
-                });
-
-            modelBuilder.Entity("ColumnUsageLog", b =>
-                {
-                    b.HasOne("COLManager.Web.Entities.ColumnMaster", "Column")
-                        .WithMany()
-                        .HasForeignKey("ColumnID")
-                        .OnDelete(DeleteBehavior.Cascade)
-                        .IsRequired();
-
-                    b.Navigation("Column");
                 });
 #pragma warning restore 612, 618
         }

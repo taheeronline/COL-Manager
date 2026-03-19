@@ -17,160 +17,171 @@ namespace COLManager.Web.Services
             _log = log;
         }
 
-        public async Task<ServiceResult<ColumnUsageReadDto>> CreateAsync(ColumnUsageCreateDto dto)
+        // =========================
+        // CHECKOUT
+        // =========================
+
+        public async Task<ServiceResult<bool>> CreateCheckoutAsync(ColumnCheckoutCreateDto dto)
         {
             try
             {
-                if (dto.RuntimeHours <= 0)
-                    return ServiceResult<ColumnUsageReadDto>.Fail("Runtime hours must be greater than zero.");
-                if (dto.NumberOfInjections < 0)
-                    return ServiceResult<ColumnUsageReadDto>.Fail("Number of injections cannot be negative.");
+                // 1️⃣ Check if column is already checked out
+                var exists = await _db.Column_Usage_Log
+                    .AnyAsync(x => x.ColumnID == dto.ColumnID && x.Status == "Checked Out");
 
-                var column = await _db.Column_Master.FindAsync(dto.ColumnID);
+                if (exists)
+                    return ServiceResult<bool>.Fail("Column is already checked out.");
+
+                // 2️⃣ Get column info (including linked protocol)
+                var column = await _db.Column_Master
+                    .FirstOrDefaultAsync(c => c.ColumnID == dto.ColumnID);
+
                 if (column == null)
-                    return ServiceResult<ColumnUsageReadDto>.Fail("Column not found for the provided ColumnID.");
+                    return ServiceResult<bool>.Fail("Selected column not found.");
 
+                // 3️⃣ Resolve protocol info from column
+                var protocol = await _db.Protocol
+                    .FirstOrDefaultAsync(p => p.ProtocolID == column.ProtocolID && p.IsActive);
+
+                if (protocol == null)
+                    return ServiceResult<bool>.Fail("Protocol for selected column not found or inactive.");
+
+                // 4️⃣ Create checkout record
                 var entity = new ColumnUsageLog
                 {
                     ColumnID = dto.ColumnID,
-                    RuntimeHours = dto.RuntimeHours,
-                    NumberOfInjections = dto.NumberOfInjections,
-                    PreUseBackPressureBar = dto.PreUseBackPressureBar,
-                    PostUseBackPressureBar = dto.PostUseBackPressureBar,
-                    MaxPressureObservedBar = dto.MaxPressureObservedBar,
-                    FlowRateMLPerMin = dto.FlowRateMLPerMin,
-                    InjectionVolumeML = dto.InjectionVolumeML,
-                    RunDate = dto.RunDate,
-                    Remarks = dto.Remarks
+                    CheckoutDate = dto.CheckoutDate,
+                    Status = "Checked Out",
+                    Remarks = dto.Remarks,
                 };
 
                 _db.Column_Usage_Log.Add(entity);
-
-                // update totals on column (unit of work within same DbContext)
-                column.TotalRuntimeHours += dto.RuntimeHours;
-                column.TotalInjections += dto.NumberOfInjections;
-
                 await _db.SaveChangesAsync();
 
-                var read = new ColumnUsageReadDto
-                {
-                    UsageID = entity.UsageID,
-                    ColumnID = entity.ColumnID,
-                    RuntimeHours = entity.RuntimeHours,
-                    NumberOfInjections = entity.NumberOfInjections,
-                    PreUseBackPressureBar = entity.PreUseBackPressureBar,
-                    PostUseBackPressureBar = entity.PostUseBackPressureBar,
-                    MaxPressureObservedBar = entity.MaxPressureObservedBar,
-                    FlowRateMLPerMin = entity.FlowRateMLPerMin,
-                    InjectionVolumeML = entity.InjectionVolumeML,
-                    RunDate = entity.RunDate,
-                    Remarks = entity.Remarks
-                };
-
-                return ServiceResult<ColumnUsageReadDto>.Ok(read, "Usage logged successfully.");
-            }
-            catch (DbUpdateException dbEx)
-            {
-                _log.LogError(dbEx, "DB error while creating usage log");
-                return ServiceResult<ColumnUsageReadDto>.Fail("Database error while creating usage entry.");
+                return ServiceResult<bool>.Ok(true, "Checkout successful.");
             }
             catch (Exception ex)
             {
-                _log.LogError(ex, "Unexpected error while creating usage log");
-                return ServiceResult<ColumnUsageReadDto>.Fail("An unexpected error occurred while creating usage entry.");
+                _log.LogError(ex, "Checkout failed");
+                return ServiceResult<bool>.Fail("Checkout failed.");
             }
         }
 
-        public async Task<ServiceResult<bool>> DeleteAsync(int id)
+        // =========================
+        // CHECK-IN
+        // =========================
+
+        public async Task<ServiceResult<bool>> CheckinAsync(ColumnCheckinDto dto)
         {
             try
             {
-                var entity = await _db.Column_Usage_Log.FindAsync(id);
-                if (entity == null)
-                    return ServiceResult<bool>.Fail("Usage record not found.");
+                var entity = await _db.Column_Usage_Log
+                    .FirstOrDefaultAsync(x => x.UsageID == dto.CheckoutID);
 
-                // update column totals
+                if (entity == null)
+                    return ServiceResult<bool>.Fail("Record not found.");
+
+                if (entity.Status == "Checked In")
+                    return ServiceResult<bool>.Fail("Already checked in.");
+
+                entity.Status = "Checked In";
+                entity.CheckinDate = dto.CheckinDate;
+
+                entity.RuntimeHours = dto.RuntimeHours;
+                entity.NumberOfInjections = dto.NumberOfInjections;
+                entity.PreUseBackPressureBar = dto.PreUseBackPressureBar;
+                entity.PostUseBackPressureBar = dto.PostUseBackPressureBar;
+                entity.MaxPressureObservedBar = dto.MaxPressureObservedBar;
+                entity.FlowRateMLPerMin = dto.FlowRateMLPerMin;
+                entity.InjectionVolumeML = dto.InjectionVolumeML;
+                entity.RunDate = dto.CheckinDate;
+                entity.Remarks = dto.Remarks;
+
                 var column = await _db.Column_Master.FindAsync(entity.ColumnID);
                 if (column != null)
                 {
-                    column.TotalRuntimeHours -= entity.RuntimeHours;
-                    column.TotalInjections -= entity.NumberOfInjections;
-                    if (column.TotalRuntimeHours < 0) column.TotalRuntimeHours = 0;
-                    if (column.TotalInjections < 0) column.TotalInjections = 0;
+                    column.TotalRuntimeHours += dto.RuntimeHours;
+                    column.TotalInjections += dto.NumberOfInjections;
                 }
 
-                _db.Column_Usage_Log.Remove(entity);
                 await _db.SaveChangesAsync();
-                return ServiceResult<bool>.Ok(true, "Usage record deleted.");
+
+                return ServiceResult<bool>.Ok(true, "Check-in completed.");
             }
             catch (Exception ex)
             {
-                _log.LogError(ex, "Error deleting usage {Id}", id);
-                return ServiceResult<bool>.Fail("An error occurred while deleting the usage record.");
+                _log.LogError(ex, "Check-in failed");
+                return ServiceResult<bool>.Fail("Check-in failed.");
             }
         }
 
-        public async Task<ServiceResult<IEnumerable<ColumnUsageReadDto>>> GetAllAsync(int? columnId = null)
-        {
-            try
-            {
-                var query = _db.Column_Usage_Log.AsQueryable();
-                if (columnId.HasValue)
-                    query = query.Where(x => x.ColumnID == columnId.Value);
+        // =========================
+        // READ
+        // =========================
 
-                var list = await query.OrderByDescending(x => x.RunDate).ToListAsync();
-                var dto = list.Select(e => new ColumnUsageReadDto
+        public async Task<List<ColumnCheckoutReadDto>> GetCheckoutsAsync()
+        {
+            return await (
+                from u in _db.Column_Usage_Log
+                join c in _db.Column_Master on u.ColumnID equals c.ColumnID
+                orderby u.CheckoutDate descending
+                select new ColumnCheckoutReadDto
                 {
-                    UsageID = e.UsageID,
-                    ColumnID = e.ColumnID,
-                    RuntimeHours = e.RuntimeHours,
-                    NumberOfInjections = e.NumberOfInjections,
-                    PreUseBackPressureBar = e.PreUseBackPressureBar,
-                    PostUseBackPressureBar = e.PostUseBackPressureBar,
-                    MaxPressureObservedBar = e.MaxPressureObservedBar,
-                    FlowRateMLPerMin = e.FlowRateMLPerMin,
-                    InjectionVolumeML = e.InjectionVolumeML,
-                    RunDate = e.RunDate,
-                    Remarks = e.Remarks
-                });
-                return ServiceResult<IEnumerable<ColumnUsageReadDto>>.Ok(dto);
-            }
-            catch (Exception ex)
-            {
-                _log.LogError(ex, "Error fetching usage logs");
-                return ServiceResult<IEnumerable<ColumnUsageReadDto>>.Fail("An error occurred while retrieving usage logs.");
-            }
+                    CheckoutID = u.UsageID,
+                    ColumnID = u.ColumnID,
+                    CheckoutDate = u.CheckoutDate ?? DateTime.UtcNow,
+                    CheckinDate = u.CheckinDate,
+                    Status = u.Status,
+                    ColumnName = c.ColumnName,
+                    SerialNumber = c.SerialNumber
+                }
+            ).ToListAsync();
         }
 
-        public async Task<ServiceResult<ColumnUsageReadDto>> GetByIdAsync(int id)
+        public async Task<List<ColumnCheckoutReadDto>> GetCheckedOutOnlyAsync()
         {
-            try
-            {
-                var e = await _db.Column_Usage_Log.FindAsync(id);
-                if (e == null)
-                    return ServiceResult<ColumnUsageReadDto>.Fail("Usage record not found.");
-
-                var dto = new ColumnUsageReadDto
+            return await (
+                from u in _db.Column_Usage_Log
+                join c in _db.Column_Master on u.ColumnID equals c.ColumnID
+                where u.Status == "Checked Out"
+                select new ColumnCheckoutReadDto
                 {
-                    UsageID = e.UsageID,
-                    ColumnID = e.ColumnID,
-                    RuntimeHours = e.RuntimeHours,
-                    NumberOfInjections = e.NumberOfInjections,
-                    PreUseBackPressureBar = e.PreUseBackPressureBar,
-                    PostUseBackPressureBar = e.PostUseBackPressureBar,
-                    MaxPressureObservedBar = e.MaxPressureObservedBar,
-                    FlowRateMLPerMin = e.FlowRateMLPerMin,
-                    InjectionVolumeML = e.InjectionVolumeML,
-                    RunDate = e.RunDate,
-                    Remarks = e.Remarks
-                };
-                return ServiceResult<ColumnUsageReadDto>.Ok(dto);
-            }
-            catch (Exception ex)
-            {
-                _log.LogError(ex, "Error fetching usage by id {Id}", id);
-                return ServiceResult<ColumnUsageReadDto>.Fail("An error occurred while retrieving the usage record.");
-            }
+                    CheckoutID = u.UsageID,
+                    ColumnID = u.ColumnID,
+                    CheckoutDate = u.CheckoutDate ?? DateTime.UtcNow,
+                    Status = u.Status,
+                    ColumnName = c.ColumnName,
+                    SerialNumber = c.SerialNumber
+                }
+            ).ToListAsync();
+        }
+
+        public async Task<List<ColumnUsageLifecycleReadDto>> GetLifecycleAsync()
+        {
+            return await (
+                from u in _db.Column_Usage_Log
+                join c in _db.Column_Master on u.ColumnID equals c.ColumnID
+                orderby u.CheckoutDate descending
+                select new ColumnUsageLifecycleReadDto
+                {
+                    CheckoutID = u.UsageID,
+                    ColumnID = u.ColumnID,
+                    ColumnName = c.ColumnName,
+                    SerialNumber = c.SerialNumber,
+                    Status = u.Status,
+                    CheckoutDate = u.CheckoutDate ?? DateTime.UtcNow,
+                    CheckinDate = u.CheckinDate,
+
+                    RuntimeHours = u.RuntimeHours,
+                    NumberOfInjections = u.NumberOfInjections,
+                    PreUseBackPressureBar = u.PreUseBackPressureBar,
+                    PostUseBackPressureBar = u.PostUseBackPressureBar,
+                    MaxPressureObservedBar = u.MaxPressureObservedBar,
+                    FlowRateMLPerMin = u.FlowRateMLPerMin,
+                    InjectionVolumeML = u.InjectionVolumeML,
+                    Remarks = u.Remarks
+                }
+            ).ToListAsync();
         }
     }
 }

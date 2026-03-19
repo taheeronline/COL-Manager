@@ -1,0 +1,165 @@
+@page "/checkout"
+@using COLManager.Web.DTOs
+@inject IColumnService ColumnService
+@inject IUsageService UsageService
+
+<h3>Column Checkout</h3>
+
+<button class="btn btn-primary mb-2"
+        @onclick="BeginCheckout"
+        disabled="@(AvailableColumns == null || !AvailableColumns.Any())">
+    New Checkout
+</button>
+
+@if (CheckoutList == null || !CheckoutList.Any())
+{
+    <div class="alert alert-warning mt-3">No checkout records found.</div>
+}
+else
+{
+    <table class="table table-striped mt-3">
+        <thead class="table-dark">
+            <tr>
+                <th>Column</th>
+                <th>Protocol</th>
+                <th>Status</th>
+                <th>Checkout Date</th>
+            </tr>
+        </thead>
+        <tbody>
+            @foreach (var c in CheckoutList)
+            {
+                <tr class="@(c.Status == "Checked Out" ? "table-danger" : "")">
+                    <td>
+                        <strong>@c.ColumnName</strong><br />
+                        <small class="text-muted">@c.SerialNumber</small>
+                    </td>
+                    <td>@c.ProtocolName</td>
+                    <td>
+                        <span class="badge @(c.Status == "Checked Out" ? "bg-danger" : "bg-success")">
+                            @c.Status
+                        </span>
+                    </td>
+                    <td>@c.CheckoutDate.ToString("yyyy-MM-dd")</td>
+                </tr>
+            }
+        </tbody>
+    </table>
+}
+
+@if (IsCheckout)
+{
+    <div class="modal show d-block" style="background:rgba(0,0,0,0.5)">
+        <div class="modal-dialog" @onclick:stopPropagation>
+            <div class="modal-content">
+
+                <div class="modal-header">
+                    <h5>Checkout Column</h5>
+                    <button class="btn-close" @onclick="Cancel"></button>
+                </div>
+
+                <div class="modal-body">
+
+                    <EditForm Model="CheckoutModel" OnValidSubmit="SaveCheckout">
+                        <DataAnnotationsValidator />
+                        <ValidationSummary />
+
+                        <!-- Column -->
+                        <div class="mb-3">
+                            <label>Column *</label>
+                            <InputSelect @bind-Value="CheckoutModel.ColumnID"
+                                         class="form-select">
+                                <option value="0">Select Column</option>
+                                @foreach (var col in AvailableColumns)
+                                {
+                                    <option value="@col.ColumnID">
+                                        @col.ColumnName (@col.SerialNumber)
+                                    </option>
+                                }
+                            </InputSelect>
+                        </div>
+
+                        <div class="modal-footer">
+                            <button type="button" class="btn btn-secondary" @onclick="Cancel">
+                                Cancel
+                            </button>
+
+                            <button type="submit"
+                                    class="btn btn-success"
+                                    disabled="@(CheckoutModel.ColumnID == 0)">
+                                Checkout
+                            </button>
+                        </div>
+
+                    </EditForm>
+                </div>
+            </div>
+        </div>
+    </div>
+}
+
+@code {
+    private List<ColumnCheckoutReadDto> CheckoutList = new();
+    private List<ColumnMasterReadDto> Columns = new();
+    private List<ColumnMasterReadDto> AvailableColumns = new();
+
+    private bool IsCheckout = false;
+
+    private ColumnCheckoutCreateDto CheckoutModel = new();
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadData();
+    }
+
+    private async Task LoadData()
+    {
+        var colRes = await ColumnService.GetAllAsync();
+        if (colRes.Success)
+            Columns = colRes.Data?.ToList() ?? new();
+
+        CheckoutList = await UsageService.GetCheckoutsAsync();
+
+        var checkedOutIds = CheckoutList
+            .Where(x => x.Status == "Checked Out")
+            .Select(x => x.ColumnID)
+            .ToHashSet();
+
+        AvailableColumns = Columns
+            .Where(c => !checkedOutIds.Contains(c.ColumnID))
+            .ToList();
+    }
+
+    private void BeginCheckout()
+    {
+        IsCheckout = true;
+
+        CheckoutModel = new ColumnCheckoutCreateDto
+        {
+            CheckoutDate = DateTime.UtcNow
+        };
+    }
+
+    private void Cancel()
+    {
+        IsCheckout = false;
+    }
+
+    private async Task SaveCheckout()
+    {
+        if (CheckoutModel.ColumnID == 0)
+            return;
+
+        var result = await UsageService.CreateCheckoutAsync(CheckoutModel);
+
+        if (result.Success)
+        {
+            IsCheckout = false;
+            await LoadData();
+        }
+        else
+        {
+            // optional: show error message
+        }
+    }
+}

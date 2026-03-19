@@ -1,0 +1,262 @@
+﻿@page "/dashboard"
+@using COLManager.Web.DTOs
+@inject IUsageService UsageService
+@inject IColumnService ColumnService
+
+<h3>Column Dashboard</h3>
+
+@if (Data == null || !Data.Any())
+{
+    <div class="alert alert-warning">No data available.</div>
+}
+else
+{
+    <table class="table table-striped">
+        <thead class="table-dark">
+            <tr>
+                <th>Column</th>
+                <th>Protocol</th>
+                <th>Status</th>
+                <th></th>
+            </tr>
+        </thead>
+        <tbody>
+            @foreach (var c in Data)
+            {
+                <tr class="@(c.Status == "Checked Out" ? "table-danger" : "")">
+                    <td>
+                        <strong>@c.ColumnName</strong><br />
+                        <small class="text-muted">@c.SerialNumber</small>
+                    </td>
+                    <td>@(string.IsNullOrEmpty(c.ProtocolName) ? "-" : c.ProtocolName)</td>
+                    <td>
+                        <span class="badge @(c.Status == "Checked Out" ? "bg-danger" : "bg-success")">
+                            @c.Status
+                        </span>
+                    </td>
+                    <td>
+                        @if (c.Status == "Checked Out")
+                        {
+                            <button class="btn btn-primary btn-sm"
+                                    @onclick="() => BeginCheckin(c)">
+                                Check-in
+                            </button>
+                        }
+                        else
+                        {
+                            <button class="btn btn-success btn-sm"
+                                    @onclick="() => BeginCheckout(c)">
+                                Checkout
+                            </button>
+                        }
+                    </td>
+                </tr>
+            }
+        </tbody>
+    </table>
+}
+
+@* =========================
+   CHECKOUT MODAL
+   ========================= *@
+@if (IsCheckout)
+{
+    <div class="modal show d-block" style="background:rgba(0,0,0,0.5)">
+        <div class="modal-dialog" @onclick:stopPropagation>
+            <div class="modal-content">
+
+                <div class="modal-header">
+                    <h5>Checkout Column</h5>
+                    <button class="btn-close" @onclick="CloseCheckout"></button>
+                </div>
+
+                <div class="modal-body">
+
+                    <div class="alert alert-info">
+                        <strong>@SelectedItem?.ColumnName</strong><br />
+                        Serial: @SelectedItem?.SerialNumber
+                    </div>
+
+                    <EditForm Model="CheckoutModel" OnValidSubmit="SaveCheckout">
+                        <DataAnnotationsValidator />
+                        <ValidationSummary />
+
+                        <div class="mb-3">
+                            <label>Remarks</label>
+                            <InputTextArea @bind-Value="CheckoutModel.Remarks"
+                                           class="form-control" />
+                        </div>
+
+                        <div class="modal-footer">
+                            <button type="button" class="btn btn-secondary"
+                                    @onclick="CloseCheckout">
+                                Cancel
+                            </button>
+                            <button class="btn btn-success">Checkout</button>
+                        </div>
+                    </EditForm>
+                </div>
+            </div>
+        </div>
+    </div>
+}
+
+@* =========================
+   CHECK-IN MODAL
+   ========================= *@
+@if (IsCheckin)
+{
+    <div class="modal show d-block" style="background:rgba(0,0,0,0.5)">
+        <div class="modal-dialog modal-lg" @onclick:stopPropagation>
+            <div class="modal-content">
+
+                <div class="modal-header">
+                    <h5>Check-in Column</h5>
+                    <button class="btn-close" @onclick="CloseCheckin"></button>
+                </div>
+
+                <div class="modal-body">
+
+                    <div class="alert alert-info">
+                        <strong>@SelectedItem?.ColumnName</strong><br />
+                        Protocol: @SelectedItem?.ProtocolName
+                    </div>
+
+                    <EditForm Model="CheckinModel" OnValidSubmit="SaveCheckin">
+                        <DataAnnotationsValidator />
+                        <ValidationSummary />
+
+                        <div class="row">
+                            <div class="col-md-6 mb-3">
+                                <label>Runtime Hours *</label>
+                                <InputNumber @bind-Value="CheckinModel.RuntimeHours" class="form-control" />
+                            </div>
+
+                            <div class="col-md-6 mb-3">
+                                <label>Injections *</label>
+                                <InputNumber @bind-Value="CheckinModel.NumberOfInjections" class="form-control" />
+                            </div>
+                        </div>
+
+                        <div class="row">
+                            <div class="col-md-4 mb-3">
+                                <label>Pre Pressure *</label>
+                                <InputNumber @bind-Value="CheckinModel.PreUseBackPressureBar" class="form-control" />
+                            </div>
+
+                            <div class="col-md-4 mb-3">
+                                <label>Post Pressure *</label>
+                                <InputNumber @bind-Value="CheckinModel.PostUseBackPressureBar" class="form-control" />
+                            </div>
+
+                            <div class="col-md-4 mb-3">
+                                <label>Max Pressure *</label>
+                                <InputNumber @bind-Value="CheckinModel.MaxPressureObservedBar" class="form-control" />
+                            </div>
+                        </div>
+
+                        <div class="modal-footer">
+                            <button type="button" class="btn btn-secondary"
+                                    @onclick="CloseCheckin">
+                                Cancel
+                            </button>
+
+                            <button class="btn btn-primary">
+                                Complete Check-in
+                            </button>
+                        </div>
+                    </EditForm>
+
+                </div>
+            </div>
+        </div>
+    </div>
+}
+
+@code {
+    private List<ColumnUsageLifecycleReadDto> Data = new();
+
+    private ColumnUsageLifecycleReadDto? SelectedItem;
+
+    private bool IsCheckout = false;
+    private bool IsCheckin = false;
+
+    private ColumnCheckoutCreateDto CheckoutModel = new();
+    private ColumnCheckinDto CheckinModel = new();
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadData();
+    }
+
+    private async Task LoadData()
+    {
+        Data = await UsageService.GetLifecycleAsync();
+    }
+
+    // =========================
+    // CHECKOUT
+    // =========================
+    private void BeginCheckout(ColumnUsageLifecycleReadDto item)
+    {
+        SelectedItem = item;
+
+        CheckoutModel = new ColumnCheckoutCreateDto
+        {
+            ColumnID = item.ColumnID,
+            CheckoutDate = DateTime.UtcNow
+        };
+
+        IsCheckout = true;
+    }
+
+    private void CloseCheckout()
+    {
+        IsCheckout = false;
+        SelectedItem = null;
+    }
+
+    private async Task SaveCheckout()
+    {
+        var res = await UsageService.CreateCheckoutAsync(CheckoutModel);
+
+        if (res.Success)
+        {
+            CloseCheckout();
+            await LoadData();
+        }
+    }
+
+    // =========================
+    // CHECK-IN
+    // =========================
+    private void BeginCheckin(ColumnUsageLifecycleReadDto item)
+    {
+        SelectedItem = item;
+
+        CheckinModel = new ColumnCheckinDto
+        {
+            CheckoutID = item.CheckoutID,
+            CheckinDate = DateTime.UtcNow
+        };
+
+        IsCheckin = true;
+    }
+
+    private void CloseCheckin()
+    {
+        IsCheckin = false;
+        SelectedItem = null;
+    }
+
+    private async Task SaveCheckin()
+    {
+        var res = await UsageService.CheckinAsync(CheckinModel);
+
+        if (res.Success)
+        {
+            CloseCheckin();
+            await LoadData();
+        }
+    }
+}

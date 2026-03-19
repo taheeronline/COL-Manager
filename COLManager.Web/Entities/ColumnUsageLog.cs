@@ -1,38 +1,57 @@
+using COLManager.Web.Entities;
 using System.ComponentModel.DataAnnotations;
 using System.ComponentModel.DataAnnotations.Schema;
 
-namespace COLManager.Web.Entities
+public class ColumnUsageLog
 {
-    public class ColumnUsageLog
-    {
-        [Key]
-        public int UsageID { get; set; }
+    [Key]
+    public int UsageID { get; set; }
 
-        public int ColumnID { get; set; }
+    public int ColumnID { get; set; }
 
-        [Column(TypeName = "decimal(10,2)")]
-        public decimal RuntimeHours { get; set; }
+    // =========================
+    // CHECKOUT FIELDS
+    // =========================
 
-        public int NumberOfInjections { get; set; }
+    public DateTime? CheckoutDate { get; set; }
 
-        [Column(TypeName = "decimal(10,2)")]
-        public decimal PreUseBackPressureBar { get; set; }
+    public DateTime? CheckinDate { get; set; }
 
-        [Column(TypeName = "decimal(10,2)")]
-        public decimal PostUseBackPressureBar { get; set; }
+    [MaxLength(50)]
+    public string Status { get; set; } = "Checked Out";
 
-        [Column(TypeName = "decimal(10,2)")]
-        public decimal MaxPressureObservedBar { get; set; }
+    // =========================
+    // USAGE FIELDS
+    // =========================
 
-        [Column(TypeName = "decimal(10,3)")]
-        public decimal? FlowRateMLPerMin { get; set; }
+    [Column(TypeName = "decimal(10,2)")]
+    public decimal? RuntimeHours { get; set; }
 
-        [Column(TypeName = "decimal(10,4)")]
-        public decimal? InjectionVolumeML { get; set; }
+    public int? NumberOfInjections { get; set; }
 
-        public DateTime RunDate { get; set; }
+    [Column(TypeName = "decimal(10,2)")]
+    public decimal? PreUseBackPressureBar { get; set; }
 
-        [MaxLength(500)]
-        public string? Remarks { get; set; }
-    }
+    [Column(TypeName = "decimal(10,2)")]
+    public decimal? PostUseBackPressureBar { get; set; }
+
+    [Column(TypeName = "decimal(10,2)")]
+    public decimal? MaxPressureObservedBar { get; set; }
+
+    [Column(TypeName = "decimal(10,3)")]
+    public decimal? FlowRateMLPerMin { get; set; }
+
+    [Column(TypeName = "decimal(10,4)")]
+    public decimal? InjectionVolumeML { get; set; }
+
+    public DateTime? RunDate { get; set; }
+
+    [MaxLength(500)]
+    public string? Remarks { get; set; }
+
+    // =========================
+    // NAVIGATION
+    // =========================
+
+    public ColumnMaster? Column { get; set; }
 }

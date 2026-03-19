@@ -5,9 +5,12 @@ namespace COLManager.Web.Services
 {
     public interface IUsageService
     {
-        Task<ServiceResult<IEnumerable<ColumnUsageReadDto>>> GetAllAsync(int? columnId = null);
-        Task<ServiceResult<ColumnUsageReadDto>> GetByIdAsync(int id);
-        Task<ServiceResult<ColumnUsageReadDto>> CreateAsync(ColumnUsageCreateDto dto);
-        Task<ServiceResult<bool>> DeleteAsync(int id);
+        Task<ServiceResult<bool>> CreateCheckoutAsync(ColumnCheckoutCreateDto dto);
+        Task<ServiceResult<bool>> CheckinAsync(ColumnCheckinDto dto);
+
+        Task<List<ColumnCheckoutReadDto>> GetCheckoutsAsync();
+        Task<List<ColumnCheckoutReadDto>> GetCheckedOutOnlyAsync();
+
+        Task<List<ColumnUsageLifecycleReadDto>> GetLifecycleAsync();
     }
 }
