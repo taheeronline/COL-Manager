@@ -1,6 +1,7 @@
 ﻿@page "/checkin"
 @using COLManager.Web.DTOs
 @inject IUsageService UsageService
+@inject IJSRuntime JSRuntime
 
 <h3>Column Check-in</h3>
 
@@ -82,7 +83,7 @@ else
                                 <label>Injections *</label>
                                 <InputNumber @bind-Value="CheckinModel.NumberOfInjections"
                                              class="form-control"
-                                             @oninput="EvaluateLimits" />
+                                             @oninput="EvaluateLimits"/>
                             </div>
                         </div>
 
@@ -226,7 +227,23 @@ else
 
     private async Task SaveCheckin()
     {
-        // We allow saving even if limits exceeded
+        
+        CheckinModel.Status = "Available";
+
+        EvaluateLimits();
+        if (IsExceeded)
+        {
+            CheckinModel.Status = "Quarantine";
+            var confirm = await JSRuntime.InvokeAsync<bool>("confirm", "Limits are exceeded. Do you want to proceed with check-in?");
+            if (!confirm) return;
+        }
+        if (IsWarning)
+        {
+            CheckinModel.Status = "Quarantine";
+            var confirm = await JSRuntime.InvokeAsync<bool>("confirm", "You are approaching limits. Do you want to proceed with check-in?");
+            if (!confirm) return;
+        }
+        
         var result = await UsageService.CheckinAsync(CheckinModel);
 
         if (result.Success)

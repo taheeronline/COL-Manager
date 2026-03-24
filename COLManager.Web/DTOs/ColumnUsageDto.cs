@@ -82,6 +82,8 @@ namespace COLManager.Web.DTOs
 
         [MaxLength(500)]
         public string? Remarks { get; set; }
+
+        public string? Status { get; set; } // Optional: "Checked In" or "Checked Out"
     }
 
     // =========================

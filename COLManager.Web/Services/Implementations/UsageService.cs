@@ -84,7 +84,7 @@ namespace COLManager.Web.Services
                 if (entity.Status == "Checked In")
                     return ServiceResult<bool>.Fail("Already checked in.");
 
-                entity.Status = "Checked In";
+                entity.Status = dto.Status;
                 entity.CheckinDate = dto.CheckinDate;
 
                 entity.RuntimeHours = dto.RuntimeHours;
@@ -143,6 +143,7 @@ namespace COLManager.Web.Services
             return await (
                 from u in _db.Column_Usage_Log
                 join c in _db.Column_Master on u.ColumnID equals c.ColumnID
+                join p in _db.Protocol on c.ProtocolID equals p.ProtocolID 
                 where u.Status == "Checked Out"
                 select new ColumnCheckoutReadDto
                 {
@@ -151,7 +152,11 @@ namespace COLManager.Web.Services
                     CheckoutDate = u.CheckoutDate ?? DateTime.UtcNow,
                     Status = u.Status,
                     ColumnName = c.ColumnName,
-                    SerialNumber = c.SerialNumber
+                    SerialNumber = c.SerialNumber,
+                    ProtocolName=c.ProtocolID != null ? _db.Protocol.Where(p => p.ProtocolID == c.ProtocolID).Select(p => p.ProtocolName).FirstOrDefault() : "N/A",
+                    MaxAllowedUsageHours = p.MaxAllowedPressureBar,
+                    MaxAllowedInjections = p.MaxAllowedInjections,
+                    MaxAllowedPressureBar = p.MaxAllowedPressureBar
                 }
             ).ToListAsync();
         }
