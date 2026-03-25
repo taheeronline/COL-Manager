@@ -3,6 +3,7 @@
 @using COLManager.Web.Enums
 @inject IColumnService ColumnService
 @inject IUsageService UsageService
+@inject COLManager.Web.Services.IStatusService StatusService
 
 <h3>Column Checkout</h3>
 
@@ -38,7 +39,7 @@ else
                     <td>@c.ProtocolName</td>
                     <td>
                         <span class="badge @GetStatusClass(c.Status)">
-                            @c.Status
+                            @GetStatusName(c.Status)
                         </span>
                     </td>
                     <td>@c.CheckoutDate.ToString("yyyy-MM-dd")</td>
@@ -103,6 +104,7 @@ else
     private List<ColumnCheckoutReadDto> CheckoutList = new();
     private List<ColumnMasterReadDto> Columns = new();
     private List<ColumnMasterReadDto> AvailableColumns = new();
+    private IEnumerable<COLManager.Web.Entities.StatusMaster> Statuses = Array.Empty<COLManager.Web.Entities.StatusMaster>();
 
     private bool IsCheckout = false;
 
@@ -129,6 +131,12 @@ else
         AvailableColumns = Columns
             .Where(c => !checkedOutIds.Contains(c.ColumnID))
             .ToList();
+
+        // Load statuses
+        var statRes = await StatusService.GetAllAsync();
+        if (statRes.Success)
+            Statuses = statRes.Data ?? Array.Empty<COLManager.Web.Entities.StatusMaster>();
+
     }
 
     private void BeginCheckout()
@@ -163,6 +171,7 @@ else
             // optional: show error message
         }
     }
+
     private string GetStatusClass(ColumnStatus statusId)
     {
         var status = (ColumnStatus)statusId;
@@ -175,5 +184,11 @@ else
             ColumnStatus.Retired => "bg-danger",
             _ => "bg-secondary"
         };
+    }
+
+    private string GetStatusName(ColumnStatus statusId)
+    {
+        var s = Statuses.FirstOrDefault(x => x.StatusID == (int)statusId);
+        return s?.StatusName ?? statusId.ToString();
     }
 }
