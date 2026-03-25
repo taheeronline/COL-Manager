@@ -31,14 +31,14 @@ else
         <tbody>
             @foreach (var c in CheckoutList)
             {
-                <tr class="@GetStatusClass(c.Status)">
+                <tr>
                     <td>
                         <strong>@c.ColumnName</strong><br />
                         <small class="text-muted">@c.SerialNumber</small>
                     </td>
                     <td>@c.ProtocolName</td>
                     <td>
-                        <span class="badge @GetStatusClass(c.Status)">
+                        <span class="@GetStatusClass(c.Status)">
                             @GetStatusName(c.Status)
                         </span>
                     </td>
@@ -178,11 +178,11 @@ else
 
         return status switch
         {
-            ColumnStatus.Available => "bg-success",
-            ColumnStatus.CheckedOut => "bg-warning",
-            ColumnStatus.UnderMaintenance => "bg-info",
-            ColumnStatus.Retired => "bg-danger",
-            _ => "bg-secondary"
+            ColumnStatus.Available => "badge bg-success",      // Green
+            ColumnStatus.CheckedOut => "badge bg-warning",     // Orange
+            ColumnStatus.UnderMaintenance => "badge bg-warning text-dark", // Yellow
+            ColumnStatus.Retired => "badge bg-danger",         // Red
+            _ => "badge bg-secondary"
         };
     }
 

@@ -6,7 +6,7 @@
 
 <h3>Column Check-in</h3>
 
-@if (CheckoutList == null || !CheckoutList.Any())
+@if (!CheckoutList.Any())
 {
     <div class="alert alert-warning">No checked-out columns.</div>
 }
@@ -30,9 +30,7 @@ else
                         <small class="text-muted">@c.SerialNumber</small>
                     </td>
                     <td>@c.ProtocolName</td>
-                    <td>
-                        <span class="badge bg-danger">Checked Out</span>
-                    </td>
+                    <td><span class="badge bg-danger">Checked Out</span></td>
                     <td>
                         <button class="btn btn-sm btn-primary"
                                 @onclick="() => BeginCheckin(c)">
@@ -58,15 +56,11 @@ else
 
                 <div class="modal-body">
 
-                    @if (SelectedItem != null)
-                    {
-                        <!-- Column & Protocol Info -->
-                        <div class="alert alert-info">
-                            <strong>@SelectedItem.ColumnName</strong>
-                            (@SelectedItem.SerialNumber) <br />
-                            Protocol: <strong>@SelectedItem.ProtocolName</strong>
-                        </div>
-                    }
+                    <div class="alert alert-info">
+                        <strong>@SelectedItem?.ColumnName</strong>
+                        (@SelectedItem?.SerialNumber)<br />
+                        Protocol: <strong>@SelectedItem?.ProtocolName</strong>
+                    </div>
 
                     <EditForm Model="CheckinModel" OnValidSubmit="SaveCheckin">
                         <DataAnnotationsValidator />
@@ -84,7 +78,7 @@ else
                                 <label>Injections *</label>
                                 <InputNumber @bind-Value="CheckinModel.NumberOfInjections"
                                              class="form-control"
-                                             @oninput="EvaluateLimits"/>
+                                             @oninput="EvaluateLimits" />
                             </div>
                         </div>
 
@@ -114,16 +108,19 @@ else
                         @if (SelectedItem != null)
                         {
                             <div class="alert @(IsExceeded ? "alert-danger" : IsWarning ? "alert-warning" : "alert-success")">
-                                <strong>Usage Status</strong><br />
 
+                                <b>Protocol Limits</b><br />
                                 Pressure: @CurrentPressure / @SelectedItem.MaxAllowedPressureBar<br />
                                 Hours: @CurrentHours / @SelectedItem.MaxAllowedUsageHours<br />
-                                Injections: @CurrentInjections / @SelectedItem.MaxAllowedInjections
+                                Injections: @CurrentInjections / @SelectedItem.MaxAllowedInjections<br />
 
-                                @if (!string.IsNullOrEmpty(StatusMessage))
-                                {
-                                    <div class="mt-2"><strong>@StatusMessage</strong></div>
-                                }
+                                <br />
+
+                                <b>Column Safety</b><br />
+                                <b>Column Max Pressure:</b> @SelectedItem.ColumnMaxPressureBar bar<br />
+                                <b>Observed:</b> @CheckinModel.MaxPressureObservedBar bar
+
+                                <div class="mt-2"><strong>@StatusMessage</strong></div>
                             </div>
                         }
 
@@ -154,17 +151,16 @@ else
 @code {
     private List<ColumnCheckoutReadDto> CheckoutList = new();
 
-    private bool IsCheckin = false;
+    private bool IsCheckin;
     private ColumnCheckoutReadDto? SelectedItem;
     private ColumnCheckinDto CheckinModel = new();
 
-    // Tracking
     private decimal CurrentPressure;
     private decimal CurrentHours;
     private int CurrentInjections;
 
-    private bool IsExceeded = false;
-    private bool IsWarning = false;
+    private bool IsExceeded;
+    private bool IsWarning;
     private string StatusMessage = "";
 
     protected override async Task OnInitializedAsync()
@@ -174,7 +170,6 @@ else
 
     private async Task LoadData()
     {
-        // 🔹 Ensure protocol limits are populated from backend
         CheckoutList = await UsageService.GetCheckedOutOnlyAsync();
     }
 
@@ -185,8 +180,7 @@ else
 
         CheckinModel = new ColumnCheckinDto
         {
-            CheckoutID = item.CheckoutID,
-            CheckinDate = DateTime.UtcNow
+            CheckoutID = item.CheckoutID
         };
 
         EvaluateLimits();
@@ -202,49 +196,68 @@ else
     {
         if (SelectedItem == null) return;
 
-        // Use protocol limits, not column raw values
         CurrentPressure = SelectedItem.TotalPressureUsed + CheckinModel.MaxPressureObservedBar;
         CurrentHours = SelectedItem.TotalRuntimeHours + CheckinModel.RuntimeHours;
         CurrentInjections = SelectedItem.TotalInjections + CheckinModel.NumberOfInjections;
 
-        IsExceeded =
+        bool protocolExceeded =
             CurrentPressure > SelectedItem.MaxAllowedPressureBar ||
             CurrentHours > SelectedItem.MaxAllowedUsageHours ||
             CurrentInjections > SelectedItem.MaxAllowedInjections;
 
-        IsWarning =
-            !IsExceeded &&
+        bool columnExceeded =
+            CheckinModel.MaxPressureObservedBar > SelectedItem.ColumnMaxPressureBar;
+
+        IsExceeded = protocolExceeded || columnExceeded;
+
+        IsWarning = !IsExceeded &&
             (CurrentPressure > SelectedItem.MaxAllowedPressureBar * 0.8m ||
              CurrentHours > SelectedItem.MaxAllowedUsageHours * 0.8m ||
              CurrentInjections > SelectedItem.MaxAllowedInjections * 0.8m);
 
-        if (IsExceeded)
-            StatusMessage = "❌ Limits exceeded! Check column carefully.";
+        if (columnExceeded)
+            StatusMessage = "❌ Column damaged (pressure exceeded)";
+        else if (protocolExceeded)
+            StatusMessage = "❌ Protocol limits exceeded";
         else if (IsWarning)
-            StatusMessage = "⚠ Approaching limits.";
+            StatusMessage = "⚠ Approaching limits";
         else
-            StatusMessage = "✅ Within safe limits.";
+            StatusMessage = "✅ Safe";
     }
 
     private async Task SaveCheckin()
     {
-        
-        CheckinModel.Status = ColumnStatus.Available;
-
         EvaluateLimits();
+
+        // 🔥 AUTO STATUS DECISION
         if (IsExceeded)
         {
-            CheckinModel.Status = ColumnStatus.UnderMaintenance;
-            var confirm = await JSRuntime.InvokeAsync<bool>("confirm", "Limits are exceeded. Do you want to proceed with check-in?");
+            CheckinModel.Status = ColumnStatus.Retired;
+
+            var confirm = await JSRuntime.InvokeAsync<bool>(
+                "confirm",
+                "Limits exceeded. Column will be RETIRED. Continue?"
+            );
+
             if (!confirm) return;
         }
-        if (IsWarning)
+        else if (IsWarning)
         {
             CheckinModel.Status = ColumnStatus.UnderMaintenance;
-            var confirm = await JSRuntime.InvokeAsync<bool>("confirm", "You are approaching limits. Do you want to proceed with check-in?");
-            if (!confirm) return;
+
+            var confirm = await JSRuntime.InvokeAsync<bool>(
+                "confirm",
+                "Approaching limits. Mark as UNDER MAINTENANCE?"
+            );
+
+            if (!confirm)
+                CheckinModel.Status = ColumnStatus.Available;
         }
-        
+        else
+        {
+            CheckinModel.Status = ColumnStatus.Available;
+        }
+
         var result = await UsageService.CheckinAsync(CheckinModel);
 
         if (result.Success)

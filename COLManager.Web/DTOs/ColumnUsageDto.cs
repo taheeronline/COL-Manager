@@ -25,29 +25,27 @@ namespace COLManager.Web.DTOs
     public class ColumnCheckoutReadDto
     {
         public int CheckoutID { get; set; }
-
         public int ColumnID { get; set; }
 
-        // ❌ Removed ProtocolID (not needed anymore)
+        public string ProtocolName { get; set; } = string.Empty;
 
-        public string ProtocolName { get; set; } = string.Empty; // ✅ still needed for UI
-
-        public ColumnStatus Status { get; set; } = ColumnStatus.CheckedOut;
+        public ColumnStatus Status { get; set; }
 
         public DateTime CheckoutDate { get; set; }
-
         public DateTime? CheckinDate { get; set; }
 
         public string ColumnName { get; set; } = string.Empty;
-
         public string SerialNumber { get; set; } = string.Empty;
 
-        // 🔥 Protocol limits (derived from Column → Protocol)
+        // 🔵 Protocol limits
         public decimal MaxAllowedPressureBar { get; set; }
         public decimal MaxAllowedUsageHours { get; set; }
         public int MaxAllowedInjections { get; set; }
 
-        // 🔥 Cumulative usage
+        // 🟡 Column limit (THIS WAS MISSING)
+        public decimal ColumnMaxPressureBar { get; set; }
+
+        // 🔥 Usage
         public decimal TotalRuntimeHours { get; set; }
         public int TotalInjections { get; set; }
         public decimal TotalPressureUsed { get; set; }
@@ -84,7 +82,9 @@ namespace COLManager.Web.DTOs
         [MaxLength(500)]
         public string? Remarks { get; set; }
 
-        public ColumnStatus? Status { get; set; } // Optional: "Checked In" or "Checked Out"
+        // 🔥 FINAL STATUS decided at UI
+        public ColumnStatus? Status { get; set; }
+
     }
 
     // =========================

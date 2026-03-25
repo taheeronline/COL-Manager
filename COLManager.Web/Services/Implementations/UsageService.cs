@@ -85,63 +85,54 @@ namespace COLManager.Web.Services
         // CHECK-IN
         // =========================
 
-        public async Task<ServiceResult<bool>> CheckinAsync(ColumnCheckinDto dto)
+public async Task<ServiceResult<bool>> CheckinAsync(ColumnCheckinDto dto)
+{
+    try
+    {
+        var usage = await _db.Column_Usage_Log
+            .FirstOrDefaultAsync(x => x.UsageID == dto.CheckoutID);
+
+        if (usage == null)
+            return ServiceResult<bool>.Fail("Checkout not found.");
+
+        // Update usage log
+        usage.CheckinDate = dto.CheckinDate;
+        usage.Status = (ColumnStatus)dto.Status;
+        usage.RuntimeHours = dto.RuntimeHours;
+        usage.NumberOfInjections = dto.NumberOfInjections;
+        usage.PreUseBackPressureBar = dto.PreUseBackPressureBar;
+        usage.PostUseBackPressureBar = dto.PostUseBackPressureBar;
+        usage.MaxPressureObservedBar = dto.MaxPressureObservedBar;
+        usage.FlowRateMLPerMin = dto.FlowRateMLPerMin;
+        usage.InjectionVolumeML = dto.InjectionVolumeML;
+        usage.Remarks = dto.Remarks;
+
+        // 🔥 Update Column status
+        var column = await _db.Column_Master
+            .FirstOrDefaultAsync(c => c.ColumnID == usage.ColumnID);
+
+        if (column != null && dto.Status.HasValue)
         {
-            try
-            {
-                var entity = await _db.Column_Usage_Log
-                    .FirstOrDefaultAsync(x => x.UsageID == dto.CheckoutID);
+            column.StatusID = (int)dto.Status.Value;
 
-                if (entity == null)
-                    return ServiceResult<bool>.Fail("Record not found.");
+            if (dto.Status == ColumnStatus.Retired)
+                column.RetiredOn = DateTime.UtcNow;
 
-                if (entity.Status == ColumnStatus.Available)
-                    return ServiceResult<bool>.Fail("Already checked in.");
-
-                entity.Status = (ColumnStatus)dto.Status;
-                entity.CheckinDate = dto.CheckinDate;
-
-                entity.RuntimeHours = dto.RuntimeHours;
-                entity.NumberOfInjections = dto.NumberOfInjections;
-                entity.PreUseBackPressureBar = dto.PreUseBackPressureBar;
-                entity.PostUseBackPressureBar = dto.PostUseBackPressureBar;
-                entity.MaxPressureObservedBar = dto.MaxPressureObservedBar;
-                entity.FlowRateMLPerMin = dto.FlowRateMLPerMin;
-                entity.InjectionVolumeML = dto.InjectionVolumeML;
-                entity.RunDate = dto.CheckinDate;
-                entity.Remarks = dto.Remarks;
-
-                var column = await _db.Column_Master.FindAsync(entity.ColumnID);
-                if (column != null)
-                {
-                    column.TotalRuntimeHours += dto.RuntimeHours;
-                    column.TotalInjections += dto.NumberOfInjections;
-                }
-
-                await _db.SaveChangesAsync();
-
-                var statusEnum = (int)dto.Status;
-
-                int statusValue = (int)statusEnum;
-
-                _db.Column_Master
-                    .Where(c => c.ColumnID == entity.ColumnID)
-                    .ExecuteUpdate(s => s
-                        .SetProperty(
-                                    c => c.StatusID,
-                                    statusValue // or your desired enum value
-                                    )
-                        );
-
-
-                return ServiceResult<bool>.Ok(true, "Check-in completed.");
-            }
-            catch (Exception ex)
-            {
-                _log.LogError(ex, "Check-in failed");
-                return ServiceResult<bool>.Fail("Check-in failed.");
-            }
+            // Update totals
+            column.TotalRuntimeHours += dto.RuntimeHours;
+            column.TotalInjections += dto.NumberOfInjections;
         }
+
+        await _db.SaveChangesAsync();
+
+        return ServiceResult<bool>.Ok(true, "Check-in completed.");
+    }
+    catch (Exception ex)
+    {
+        _log.LogError(ex, "Check-in failed");
+        return ServiceResult<bool>.Fail("Check-in failed.");
+    }
+}
 
         // =========================
         // READ
@@ -162,7 +153,8 @@ namespace COLManager.Web.Services
                     Status = (ColumnStatus)u.Status,
                     ColumnName = c.ColumnName,
                     SerialNumber = c.SerialNumber,
-                    ProtocolName = c.ProtocolID != null ? _db.Protocol.Where(p => p.ProtocolID == c.ProtocolID).Select(p => p.ProtocolName).FirstOrDefault() : "N/A"
+                    ProtocolName = c.ProtocolID != null ? _db.Protocol.Where(p => p.ProtocolID == c.ProtocolID).Select(p => p.ProtocolName).FirstOrDefault() : "N/A",
+                    ColumnMaxPressureBar = c.MaxPressureBar
                 }
             ).ToListAsync();
         }
@@ -185,7 +177,8 @@ namespace COLManager.Web.Services
                     ProtocolName=c.ProtocolID != null ? _db.Protocol.Where(p => p.ProtocolID == c.ProtocolID).Select(p => p.ProtocolName).FirstOrDefault() : "N/A",
                     MaxAllowedUsageHours = p.MaxAllowedPressureBar,
                     MaxAllowedInjections = p.MaxAllowedInjections,
-                    MaxAllowedPressureBar = p.MaxAllowedPressureBar
+                    MaxAllowedPressureBar = p.MaxAllowedPressureBar,
+                    ColumnMaxPressureBar = c.MaxPressureBar
                 }
             ).ToListAsync();
         }
