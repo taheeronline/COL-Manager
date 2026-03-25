@@ -2,6 +2,7 @@ using COLManager.Web.Common;
 using COLManager.Web.Data;
 using COLManager.Web.DTOs;
 using COLManager.Web.Entities;
+using COLManager.Web.Enums;
 using Microsoft.EntityFrameworkCore;
 
 namespace COLManager.Web.Services
@@ -27,7 +28,7 @@ namespace COLManager.Web.Services
             {
                 // 1️⃣ Check if column is already checked out
                 var exists = await _db.Column_Usage_Log
-                    .AnyAsync(x => x.ColumnID == dto.ColumnID && x.Status == "Checked Out");
+                    .AnyAsync(x => x.ColumnID == dto.ColumnID && x.Status == ColumnStatus.CheckedOut);
 
                 if (exists)
                     return ServiceResult<bool>.Fail("Column is already checked out.");
@@ -51,12 +52,25 @@ namespace COLManager.Web.Services
                 {
                     ColumnID = dto.ColumnID,
                     CheckoutDate = dto.CheckoutDate,
-                    Status = "Checked Out",
+                    Status = ColumnStatus.CheckedOut,
                     Remarks = dto.Remarks,
                 };
 
                 _db.Column_Usage_Log.Add(entity);
                 await _db.SaveChangesAsync();
+
+                _db.Column_Master
+                    .Where(c => c.ColumnID == dto.ColumnID)
+                    .ExecuteUpdate(s => s
+                        .SetProperty(
+                            c => c.InstalledOn,
+                            c => c.InstalledOn == null ? DateTime.UtcNow : c.InstalledOn
+                        )
+                        .SetProperty(
+                            c => c.StatusID,
+                            (int)ColumnStatus.CheckedOut // or your desired enum value
+                        )
+                    );
 
                 return ServiceResult<bool>.Ok(true, "Checkout successful.");
             }
@@ -81,10 +95,10 @@ namespace COLManager.Web.Services
                 if (entity == null)
                     return ServiceResult<bool>.Fail("Record not found.");
 
-                if (entity.Status == "Checked In")
+                if (entity.Status == ColumnStatus.Available)
                     return ServiceResult<bool>.Fail("Already checked in.");
 
-                entity.Status = dto.Status;
+                entity.Status = (ColumnStatus)dto.Status;
                 entity.CheckinDate = dto.CheckinDate;
 
                 entity.RuntimeHours = dto.RuntimeHours;
@@ -105,6 +119,20 @@ namespace COLManager.Web.Services
                 }
 
                 await _db.SaveChangesAsync();
+
+                var statusEnum = (int)dto.Status;
+
+                int statusValue = (int)statusEnum;
+
+                _db.Column_Master
+                    .Where(c => c.ColumnID == entity.ColumnID)
+                    .ExecuteUpdate(s => s
+                        .SetProperty(
+                                    c => c.StatusID,
+                                    statusValue // or your desired enum value
+                                    )
+                        );
+
 
                 return ServiceResult<bool>.Ok(true, "Check-in completed.");
             }
@@ -131,9 +159,10 @@ namespace COLManager.Web.Services
                     ColumnID = u.ColumnID,
                     CheckoutDate = u.CheckoutDate ?? DateTime.UtcNow,
                     CheckinDate = u.CheckinDate,
-                    Status = u.Status,
+                    Status = (ColumnStatus)u.Status,
                     ColumnName = c.ColumnName,
-                    SerialNumber = c.SerialNumber
+                    SerialNumber = c.SerialNumber,
+                    ProtocolName = c.ProtocolID != null ? _db.Protocol.Where(p => p.ProtocolID == c.ProtocolID).Select(p => p.ProtocolName).FirstOrDefault() : "N/A"
                 }
             ).ToListAsync();
         }
@@ -144,7 +173,7 @@ namespace COLManager.Web.Services
                 from u in _db.Column_Usage_Log
                 join c in _db.Column_Master on u.ColumnID equals c.ColumnID
                 join p in _db.Protocol on c.ProtocolID equals p.ProtocolID 
-                where u.Status == "Checked Out"
+                where u.Status == ColumnStatus.CheckedOut
                 select new ColumnCheckoutReadDto
                 {
                     CheckoutID = u.UsageID,

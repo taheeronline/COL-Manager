@@ -1,4 +1,5 @@
 @page "/columns"
+@using COLManager.Web.Enums
 @inject COLManager.Web.Services.IColumnService ColumnService
 @inject COLManager.Web.Services.IProtocolService ProtocolService
 @inject COLManager.Web.Services.IStatusService StatusService
@@ -63,7 +64,9 @@ else
                         }
                     </td>
                     <td>
-                        <span class="badge bg-primary">@GetStatusName(c.StatusID)</span>
+                        <span class="badge @(GetStatusClass(c.StatusID))">
+                            @GetStatusName(c.StatusID)
+                        </span>
                     </td>
                     <td>@c.TotalRuntimeHours</td>
                     <td>@c.TotalInjections</td>
@@ -408,6 +411,20 @@ else
     {
         var s = Statuses.FirstOrDefault(x => x.StatusID == statusId);
         return s?.StatusName ?? statusId.ToString();
+    }
+
+    private string GetStatusClass(int statusId)
+    {
+        var status = (ColumnStatus)statusId;
+
+        return status switch
+        {
+            ColumnStatus.Available => "badge bg-success",      // Green
+            ColumnStatus.CheckedOut => "badge bg-warning",     // Orange
+            ColumnStatus.UnderMaintenance => "badge bg-warning text-dark", // Yellow
+            ColumnStatus.Retired => "badge bg-danger",         // Red
+            _ => "badge bg-secondary"
+        };
     }
 
     private string GetColumnNameById(int columnId)

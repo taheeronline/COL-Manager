@@ -1,3 +1,4 @@
+using COLManager.Web.Enums;
 using System.ComponentModel.DataAnnotations;
 
 namespace COLManager.Web.DTOs
@@ -31,7 +32,7 @@ namespace COLManager.Web.DTOs
 
         public string ProtocolName { get; set; } = string.Empty; // ✅ still needed for UI
 
-        public string Status { get; set; } = "Checked Out";
+        public ColumnStatus Status { get; set; } = ColumnStatus.CheckedOut;
 
         public DateTime CheckoutDate { get; set; }
 
@@ -83,7 +84,7 @@ namespace COLManager.Web.DTOs
         [MaxLength(500)]
         public string? Remarks { get; set; }
 
-        public string? Status { get; set; } // Optional: "Checked In" or "Checked Out"
+        public ColumnStatus? Status { get; set; } // Optional: "Checked In" or "Checked Out"
     }
 
     // =========================
@@ -101,7 +102,7 @@ namespace COLManager.Web.DTOs
 
         public string ProtocolName { get; set; } = string.Empty;
 
-        public string Status { get; set; } = string.Empty;
+        public ColumnStatus? Status { get; set; } = ColumnStatus.CheckedOut;
 
         public DateTime CheckoutDate { get; set; }
 

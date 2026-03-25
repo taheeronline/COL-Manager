@@ -1,4 +1,5 @@
 using COLManager.Web.Entities;
+using COLManager.Web.Enums;
 using System.ComponentModel.DataAnnotations;
 using System.ComponentModel.DataAnnotations.Schema;
 
@@ -18,7 +19,7 @@ public class ColumnUsageLog
     public DateTime? CheckinDate { get; set; }
 
     [MaxLength(50)]
-    public string Status { get; set; } = "Checked Out";
+    public ColumnStatus Status { get; set; } = ColumnStatus.Available;
 
     // =========================
     // USAGE FIELDS

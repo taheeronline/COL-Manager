@@ -1,5 +1,6 @@
 @page "/checkout"
 @using COLManager.Web.DTOs
+@using COLManager.Web.Enums
 @inject IColumnService ColumnService
 @inject IUsageService UsageService
 
@@ -29,14 +30,14 @@ else
         <tbody>
             @foreach (var c in CheckoutList)
             {
-                <tr class="@(c.Status == "Checked Out" ? "table-danger" : "")">
+                <tr class="@GetStatusClass(c.Status)">
                     <td>
                         <strong>@c.ColumnName</strong><br />
                         <small class="text-muted">@c.SerialNumber</small>
                     </td>
                     <td>@c.ProtocolName</td>
                     <td>
-                        <span class="badge @(c.Status == "Checked Out" ? "bg-danger" : "bg-success")">
+                        <span class="badge @GetStatusClass(c.Status)">
                             @c.Status
                         </span>
                     </td>
@@ -121,7 +122,7 @@ else
         CheckoutList = await UsageService.GetCheckoutsAsync();
 
         var checkedOutIds = CheckoutList
-            .Where(x => x.Status == "Checked Out")
+            .Where(x => x.Status == ColumnStatus.CheckedOut)
             .Select(x => x.ColumnID)
             .ToHashSet();
 
@@ -161,5 +162,18 @@ else
         {
             // optional: show error message
         }
+    }
+    private string GetStatusClass(ColumnStatus statusId)
+    {
+        var status = (ColumnStatus)statusId;
+
+        return status switch
+        {
+            ColumnStatus.Available => "bg-success",
+            ColumnStatus.CheckedOut => "bg-warning",
+            ColumnStatus.UnderMaintenance => "bg-info",
+            ColumnStatus.Retired => "bg-danger",
+            _ => "bg-secondary"
+        };
     }
 }

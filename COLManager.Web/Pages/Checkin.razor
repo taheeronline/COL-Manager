@@ -1,5 +1,6 @@
 ﻿@page "/checkin"
 @using COLManager.Web.DTOs
+@using COLManager.Web.Enums
 @inject IUsageService UsageService
 @inject IJSRuntime JSRuntime
 
@@ -228,18 +229,18 @@ else
     private async Task SaveCheckin()
     {
         
-        CheckinModel.Status = "Available";
+        CheckinModel.Status = ColumnStatus.Available;
 
         EvaluateLimits();
         if (IsExceeded)
         {
-            CheckinModel.Status = "Quarantine";
+            CheckinModel.Status = ColumnStatus.UnderMaintenance;
             var confirm = await JSRuntime.InvokeAsync<bool>("confirm", "Limits are exceeded. Do you want to proceed with check-in?");
             if (!confirm) return;
         }
         if (IsWarning)
         {
-            CheckinModel.Status = "Quarantine";
+            CheckinModel.Status = ColumnStatus.UnderMaintenance;
             var confirm = await JSRuntime.InvokeAsync<bool>("confirm", "You are approaching limits. Do you want to proceed with check-in?");
             if (!confirm) return;
         }

@@ -1,5 +1,6 @@
 ﻿@page "/dashboard"
 @using COLManager.Web.DTOs
+@using COLManager.Web.Enums
 @inject IUsageService UsageService
 @inject IColumnService ColumnService
 
@@ -23,19 +24,19 @@ else
         <tbody>
             @foreach (var c in Data)
             {
-                <tr class="@(c.Status == "Checked Out" ? "table-danger" : "")">
+                <tr class="@(c.Status == ColumnStatus.CheckedOut ? "table-danger" : "")">
                     <td>
                         <strong>@c.ColumnName</strong><br />
                         <small class="text-muted">@c.SerialNumber</small>
                     </td>
                     <td>@(string.IsNullOrEmpty(c.ProtocolName) ? "-" : c.ProtocolName)</td>
                     <td>
-                        <span class="badge @(c.Status == "Checked Out" ? "bg-danger" : "bg-success")">
+                        <span class="badge @(c.Status == ColumnStatus.CheckedOut ? "bg-danger" : "bg-success")">
                             @c.Status
                         </span>
                     </td>
                     <td>
-                        @if (c.Status == "Checked Out")
+                        @if (c.Status == ColumnStatus.CheckedOut)
                         {
                             <button class="btn btn-primary btn-sm"
                                     @onclick="() => BeginCheckin(c)">
