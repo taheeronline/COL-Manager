@@ -4,6 +4,7 @@ using COLManager.Web.DTOs;
 using COLManager.Web.Entities;
 using COLManager.Web.Enums;
 using Microsoft.EntityFrameworkCore;
+using System.Text.Json;
 
 namespace COLManager.Web.Services
 {
@@ -11,11 +12,13 @@ namespace COLManager.Web.Services
     {
         private readonly ApplicationDbContext _db;
         private readonly ILogger<UsageService> _log;
+        private readonly IAuditService _auditService;
 
-        public UsageService(ApplicationDbContext db, ILogger<UsageService> log)
+        public UsageService(ApplicationDbContext db, ILogger<UsageService> log, IAuditService auditService)
         {
             _db = db;
             _log = log;
+            _auditService = auditService;
         }
 
         // =========================
@@ -47,7 +50,10 @@ namespace COLManager.Web.Services
                 if (protocol == null)
                     return ServiceResult<bool>.Fail("Protocol for selected column not found or inactive.");
 
-                // 4️⃣ Create checkout record
+                // 4️⃣ Store old status for audit trail
+                var oldStatusName = await GetStatusNameAsync(column.StatusID);
+
+                // 5️⃣ Create checkout record
                 var entity = new ColumnUsageLog
                 {
                     ColumnID = dto.ColumnID,
@@ -59,18 +65,15 @@ namespace COLManager.Web.Services
                 _db.Column_Usage_Log.Add(entity);
                 await _db.SaveChangesAsync();
 
-                _db.Column_Master
-                    .Where(c => c.ColumnID == dto.ColumnID)
-                    .ExecuteUpdate(s => s
-                        .SetProperty(
-                            c => c.InstalledOn,
-                            c => c.InstalledOn == null ? DateTime.UtcNow : c.InstalledOn
-                        )
-                        .SetProperty(
-                            c => c.StatusID,
-                            (int)ColumnStatus.CheckedOut // or your desired enum value
-                        )
-                    );
+                // 6️⃣ Update column status
+                column.StatusID = (int)ColumnStatus.CheckedOut;
+                await _db.SaveChangesAsync();
+
+                // 7️⃣ Log audit trail for checkout
+                await LogAuditCheckoutAsync(column, oldStatusName);
+
+                _log.LogInformation("Checkout successful for column {ColumnName} (ID: {ColumnID})", 
+                    column.ColumnName, column.ColumnID);
 
                 return ServiceResult<bool>.Ok(true, "Checkout successful.");
             }
@@ -85,54 +88,67 @@ namespace COLManager.Web.Services
         // CHECK-IN
         // =========================
 
-public async Task<ServiceResult<bool>> CheckinAsync(ColumnCheckinDto dto)
-{
-    try
-    {
-        var usage = await _db.Column_Usage_Log
-            .FirstOrDefaultAsync(x => x.UsageID == dto.CheckoutID);
-
-        if (usage == null)
-            return ServiceResult<bool>.Fail("Checkout not found.");
-
-        // Update usage log
-        usage.CheckinDate = dto.CheckinDate;
-        usage.Status = (ColumnStatus)dto.Status;
-        usage.RuntimeHours = dto.RuntimeHours;
-        usage.NumberOfInjections = dto.NumberOfInjections;
-        usage.PreUseBackPressureBar = dto.PreUseBackPressureBar;
-        usage.PostUseBackPressureBar = dto.PostUseBackPressureBar;
-        usage.MaxPressureObservedBar = dto.MaxPressureObservedBar;
-        usage.FlowRateMLPerMin = dto.FlowRateMLPerMin;
-        usage.InjectionVolumeML = dto.InjectionVolumeML;
-        usage.Remarks = dto.Remarks;
-
-        // 🔥 Update Column status
-        var column = await _db.Column_Master
-            .FirstOrDefaultAsync(c => c.ColumnID == usage.ColumnID);
-
-        if (column != null && dto.Status.HasValue)
+        public async Task<ServiceResult<bool>> CheckinAsync(ColumnCheckinDto dto)
         {
-            column.StatusID = (int)dto.Status.Value;
+            try
+            {
+                var usage = await _db.Column_Usage_Log
+                    .FirstOrDefaultAsync(x => x.UsageID == dto.CheckoutID);
 
-            if (dto.Status == ColumnStatus.Retired)
-                column.RetiredOn = DateTime.UtcNow;
+                if (usage == null)
+                    return ServiceResult<bool>.Fail("Checkout not found.");
 
-            // Update totals
-            column.TotalRuntimeHours += dto.RuntimeHours;
-            column.TotalInjections += dto.NumberOfInjections;
+                var column = await _db.Column_Master
+                    .FirstOrDefaultAsync(c => c.ColumnID == usage.ColumnID);
+
+                if (column == null)
+                    return ServiceResult<bool>.Fail("Column not found.");
+
+                // Store old status for audit trail
+                var oldStatusName = await GetStatusNameAsync(column.StatusID);
+
+                // Update usage log
+                usage.CheckinDate = dto.CheckinDate;
+                usage.Status = (ColumnStatus)dto.Status;
+                usage.RuntimeHours = dto.RuntimeHours;
+                usage.NumberOfInjections = dto.NumberOfInjections;
+                usage.PreUseBackPressureBar = dto.PreUseBackPressureBar;
+                usage.PostUseBackPressureBar = dto.PostUseBackPressureBar;
+                usage.MaxPressureObservedBar = dto.MaxPressureObservedBar;
+                usage.FlowRateMLPerMin = dto.FlowRateMLPerMin;
+                usage.InjectionVolumeML = dto.InjectionVolumeML;
+                usage.Remarks = dto.Remarks;
+
+                // Update Column status
+                if (dto.Status.HasValue)
+                {
+                    column.StatusID = (int)dto.Status.Value;
+
+                    if (dto.Status == ColumnStatus.Retired)
+                        column.RetiredOn = DateTime.UtcNow;
+
+                    // Update totals
+                    column.TotalRuntimeHours += dto.RuntimeHours;
+                    column.TotalInjections += dto.NumberOfInjections;
+                }
+
+                await _db.SaveChangesAsync();
+
+                // Log audit trail for check-in
+                var newStatusName = await GetStatusNameAsync(column.StatusID);
+                await LogAuditCheckinAsync(column, usage, oldStatusName, newStatusName, dto);
+
+                _log.LogInformation("Check-in completed for column {ColumnName} (ID: {ColumnID})", 
+                    column.ColumnName, column.ColumnID);
+
+                return ServiceResult<bool>.Ok(true, "Check-in completed.");
+            }
+            catch (Exception ex)
+            {
+                _log.LogError(ex, "Check-in failed");
+                return ServiceResult<bool>.Fail("Check-in failed.");
+            }
         }
-
-        await _db.SaveChangesAsync();
-
-        return ServiceResult<bool>.Ok(true, "Check-in completed.");
-    }
-    catch (Exception ex)
-    {
-        _log.LogError(ex, "Check-in failed");
-        return ServiceResult<bool>.Fail("Check-in failed.");
-    }
-}
 
         // =========================
         // READ
@@ -143,6 +159,7 @@ public async Task<ServiceResult<bool>> CheckinAsync(ColumnCheckinDto dto)
             return await (
                 from u in _db.Column_Usage_Log
                 join c in _db.Column_Master on u.ColumnID equals c.ColumnID
+                where c.StatusID == (int)ColumnStatus.CheckedOut && u.CheckinDate == null
                 orderby u.CheckoutDate descending
                 select new ColumnCheckoutReadDto
                 {
@@ -150,7 +167,7 @@ public async Task<ServiceResult<bool>> CheckinAsync(ColumnCheckinDto dto)
                     ColumnID = u.ColumnID,
                     CheckoutDate = u.CheckoutDate ?? DateTime.UtcNow,
                     CheckinDate = u.CheckinDate,
-                    Status = (ColumnStatus)u.Status,
+                    Status = (ColumnStatus)c.StatusID,
                     ColumnName = c.ColumnName,
                     SerialNumber = c.SerialNumber,
                     ProtocolName = c.ProtocolID != null ? _db.Protocol.Where(p => p.ProtocolID == c.ProtocolID).Select(p => p.ProtocolName).FirstOrDefault() : "N/A",
@@ -165,20 +182,23 @@ public async Task<ServiceResult<bool>> CheckinAsync(ColumnCheckinDto dto)
                 from u in _db.Column_Usage_Log
                 join c in _db.Column_Master on u.ColumnID equals c.ColumnID
                 join p in _db.Protocol on c.ProtocolID equals p.ProtocolID 
-                where u.Status == ColumnStatus.CheckedOut
+                where c.StatusID == (int)ColumnStatus.CheckedOut && u.CheckinDate == null
+                orderby u.CheckoutDate descending
                 select new ColumnCheckoutReadDto
                 {
                     CheckoutID = u.UsageID,
                     ColumnID = u.ColumnID,
                     CheckoutDate = u.CheckoutDate ?? DateTime.UtcNow,
-                    Status = u.Status,
+                    Status = (ColumnStatus)c.StatusID,
                     ColumnName = c.ColumnName,
                     SerialNumber = c.SerialNumber,
-                    ProtocolName=c.ProtocolID != null ? _db.Protocol.Where(p => p.ProtocolID == c.ProtocolID).Select(p => p.ProtocolName).FirstOrDefault() : "N/A",
+                    ProtocolName = c.ProtocolID != null ? _db.Protocol.Where(p => p.ProtocolID == c.ProtocolID).Select(p => p.ProtocolName).FirstOrDefault() : "N/A",
                     MaxAllowedUsageHours = p.MaxAllowedPressureBar,
                     MaxAllowedInjections = p.MaxAllowedInjections,
                     MaxAllowedPressureBar = p.MaxAllowedPressureBar,
-                    ColumnMaxPressureBar = c.MaxPressureBar
+                    ColumnMaxPressureBar = c.MaxPressureBar,
+                    TotalRuntimeHours = c.TotalRuntimeHours,
+                    TotalInjections = c.TotalInjections
                 }
             ).ToListAsync();
         }
@@ -195,7 +215,7 @@ public async Task<ServiceResult<bool>> CheckinAsync(ColumnCheckinDto dto)
                     ColumnID = u.ColumnID,
                     ColumnName = c.ColumnName,
                     SerialNumber = c.SerialNumber,
-                    Status = u.Status,
+                    Status = (ColumnStatus)c.StatusID,
                     CheckoutDate = u.CheckoutDate ?? DateTime.UtcNow,
                     CheckinDate = u.CheckinDate,
 
@@ -209,6 +229,103 @@ public async Task<ServiceResult<bool>> CheckinAsync(ColumnCheckinDto dto)
                     Remarks = u.Remarks
                 }
             ).ToListAsync();
+        }
+
+        // =========================
+        // AUDIT TRAIL HELPERS
+        // =========================
+
+        private async Task LogAuditCheckoutAsync(ColumnMaster column, string oldStatusName)
+        {
+            try
+            {
+                var newStatusName = await GetStatusNameAsync((int)ColumnStatus.CheckedOut);
+                var checkoutData = new
+                {
+                    ColumnName = column.ColumnName,
+                    SerialNumber = column.SerialNumber,
+                    CheckoutDate = DateTime.UtcNow.ToString("yyyy-MM-dd HH:mm:ss"),
+                    StatusChange = new
+                    {
+                        From = oldStatusName,
+                        To = newStatusName
+                    }
+                };
+
+                var audit = new AuditTrail
+                {
+                    TableName = "Column_Master",
+                    RecordID = column.ColumnID,
+                    OperationType = "CHECKOUT",
+                    OldData = null,
+                    NewData = JsonSerializer.Serialize(checkoutData),
+                    ChangedBy = "System",
+                    ChangedOn = DateTime.UtcNow
+                };
+
+                await _auditService.CreateAsync(audit);
+            }
+            catch (Exception ex)
+            {
+                _log.LogWarning(ex, "Failed to log audit trail for checkout on column {Id}", column.ColumnID);
+            }
+        }
+
+        private async Task LogAuditCheckinAsync(ColumnMaster column, ColumnUsageLog usage, string oldStatusName, string newStatusName, ColumnCheckinDto dto)
+        {
+            try
+            {
+                var checkinData = new
+                {
+                    ColumnName = column.ColumnName,
+                    SerialNumber = column.SerialNumber,
+                    CheckinDate = dto.CheckinDate.ToString("yyyy-MM-dd HH:mm:ss"),
+                    StatusChange = new
+                    {
+                        From = oldStatusName,
+                        To = newStatusName
+                    },
+                    Usage = new
+                    {
+                        RuntimeHours = dto.RuntimeHours,
+                        NumberOfInjections = dto.NumberOfInjections,
+                        PreUseBackPressureBar = dto.PreUseBackPressureBar,
+                        PostUseBackPressureBar = dto.PostUseBackPressureBar,
+                        MaxPressureObservedBar = dto.MaxPressureObservedBar
+                    },
+                    Remarks = dto.Remarks
+                };
+
+                var audit = new AuditTrail
+                {
+                    TableName = "Column_Master",
+                    RecordID = column.ColumnID,
+                    OperationType = "CHECKIN",
+                    OldData = null,
+                    NewData = JsonSerializer.Serialize(checkinData),
+                    ChangedBy = "System",
+                    ChangedOn = DateTime.UtcNow
+                };
+
+                await _auditService.CreateAsync(audit);
+            }
+            catch (Exception ex)
+            {
+                _log.LogWarning(ex, "Failed to log audit trail for check-in on column {Id}", column.ColumnID);
+            }
+        }
+
+        private async Task<string> GetStatusNameAsync(int statusId)
+        {
+            try
+            {
+                var status = await _db.Status_Master.FirstOrDefaultAsync(s => s.StatusID == statusId);
+                return status?.StatusName ?? $"Status ID {statusId}";
+            }
+            catch
+            {
+                return $"Status ID {statusId}";
+            }
         }
     }
 }

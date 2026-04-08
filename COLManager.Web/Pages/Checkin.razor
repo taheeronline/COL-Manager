@@ -6,18 +6,35 @@
 
 <h3>Column Check-in</h3>
 
-@if (!CheckoutList.Any())
+@if (!string.IsNullOrEmpty(Message))
 {
-    <div class="alert alert-warning">No checked-out columns.</div>
+    <div class="alert alert-info alert-dismissible fade show" role="alert">
+        @Message
+        <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+    </div>
+}
+
+@if (IsLoading)
+{
+    <p><span class="spinner-border spinner-border-sm me-2"></span>Loading checked-out columns...</p>
+}
+else if (!CheckoutList.Any())
+{
+    <div class="alert alert-warning">
+        No checked-out columns at this time.
+    </div>
 }
 else
 {
-    <table class="table table-striped">
+    <table class="table table-striped table-hover mt-3">
         <thead class="table-dark">
             <tr>
                 <th>Column</th>
+                <th>Serial Number</th>
                 <th>Protocol</th>
                 <th>Status</th>
+                <th>Checkout Date</th>
+                <th>Days Out</th>
                 <th></th>
             </tr>
         </thead>
@@ -25,16 +42,18 @@ else
             @foreach (var c in CheckoutList)
             {
                 <tr>
+                    <td><strong>@c.ColumnName</strong></td>
+                    <td><code>@c.SerialNumber</code></td>
+                    <td>@(string.IsNullOrEmpty(c.ProtocolName) || c.ProtocolName == "N/A" ? "-" : c.ProtocolName)</td>
+                    <td><span class="badge bg-warning">Checked Out</span></td>
+                    <td>@c.CheckoutDate.ToString("yyyy-MM-dd")</td>
                     <td>
-                        <strong>@c.ColumnName</strong><br />
-                        <small class="text-muted">@c.SerialNumber</small>
+                        <span class="badge bg-info">@GetDaysOut(c.CheckoutDate)</span>
                     </td>
-                    <td>@c.ProtocolName</td>
-                    <td><span class="badge bg-danger">Checked Out</span></td>
                     <td>
                         <button class="btn btn-sm btn-primary"
                                 @onclick="() => BeginCheckin(c)">
-                            Check-in
+                            <i class="bi bi-box2-heart"></i> Check-in
                         </button>
                     </td>
                 </tr>
@@ -45,21 +64,19 @@ else
 
 @if (IsCheckin)
 {
-    <div class="modal show d-block" style="background:rgba(0,0,0,0.5)">
+    <div class="modal show d-block" style="background-color: rgba(0,0,0,0.5);">
         <div class="modal-dialog modal-lg" @onclick:stopPropagation>
             <div class="modal-content">
-
                 <div class="modal-header">
-                    <h5>Check-in Column</h5>
-                    <button class="btn-close" @onclick="CancelCheckin"></button>
+                    <h5 class="modal-title">Check-in Column</h5>
+                    <button type="button" class="btn-close" @onclick="CancelCheckin"></button>
                 </div>
 
                 <div class="modal-body">
-
                     <div class="alert alert-info">
-                        <strong>@SelectedItem?.ColumnName</strong>
-                        (@SelectedItem?.SerialNumber)<br />
-                        Protocol: <strong>@SelectedItem?.ProtocolName</strong>
+                        <strong>@SelectedItem?.ColumnName</strong> (<code>@SelectedItem?.SerialNumber</code>)<br />
+                        Protocol: <strong>@(string.IsNullOrEmpty(SelectedItem?.ProtocolName) || SelectedItem?.ProtocolName == "N/A" ? "None" : SelectedItem?.ProtocolName)</strong><br />
+                        Checkout Date: <strong>@SelectedItem?.CheckoutDate.ToString("yyyy-MM-dd")</strong>
                     </div>
 
                     <EditForm Model="CheckinModel" OnValidSubmit="SaveCheckin">
@@ -68,14 +85,14 @@ else
 
                         <div class="row">
                             <div class="col-md-6 mb-3">
-                                <label>Runtime Hours *</label>
+                                <label class="form-label">Runtime Hours <span style="color:red;">*</span></label>
                                 <InputNumber @bind-Value="CheckinModel.RuntimeHours"
                                              class="form-control"
                                              @oninput="EvaluateLimits" />
                             </div>
 
                             <div class="col-md-6 mb-3">
-                                <label>Injections *</label>
+                                <label class="form-label">Injections <span style="color:red;">*</span></label>
                                 <InputNumber @bind-Value="CheckinModel.NumberOfInjections"
                                              class="form-control"
                                              @oninput="EvaluateLimits" />
@@ -84,21 +101,21 @@ else
 
                         <div class="row">
                             <div class="col-md-4 mb-3">
-                                <label>Pre Pressure *</label>
+                                <label class="form-label">Pre Pressure (bar) <span style="color:red;">*</span></label>
                                 <InputNumber @bind-Value="CheckinModel.PreUseBackPressureBar"
                                              class="form-control"
                                              @oninput="EvaluateLimits" />
                             </div>
 
                             <div class="col-md-4 mb-3">
-                                <label>Post Pressure *</label>
+                                <label class="form-label">Post Pressure (bar) <span style="color:red;">*</span></label>
                                 <InputNumber @bind-Value="CheckinModel.PostUseBackPressureBar"
                                              class="form-control"
                                              @oninput="EvaluateLimits" />
                             </div>
 
                             <div class="col-md-4 mb-3">
-                                <label>Max Pressure *</label>
+                                <label class="form-label">Max Pressure (bar) <span style="color:red;">*</span></label>
                                 <InputNumber @bind-Value="CheckinModel.MaxPressureObservedBar"
                                              class="form-control"
                                              @oninput="EvaluateLimits" />
@@ -108,27 +125,32 @@ else
                         @if (SelectedItem != null)
                         {
                             <div class="alert @(IsExceeded ? "alert-danger" : IsWarning ? "alert-warning" : "alert-success")">
+                                <strong>Protocol Limits Assessment</strong><br />
+                                <small>
+                                    Current + Usage = Total<br />
+                                    Pressure: @SelectedItem.TotalPressureUsed.ToString("F2") + @CheckinModel.MaxPressureObservedBar.ToString("F2") = @CurrentPressure.ToString("F2") / @SelectedItem.MaxAllowedPressureBar bar<br />
+                                    Hours: @SelectedItem.TotalRuntimeHours.ToString("F2") + @CheckinModel.RuntimeHours.ToString("F2") = @CurrentHours.ToString("F2") / @SelectedItem.MaxAllowedUsageHours hours<br />
+                                    Injections: @SelectedItem.TotalInjections + @CheckinModel.NumberOfInjections = @CurrentInjections / @SelectedItem.MaxAllowedInjections
+                                </small>
 
-                                <b>Protocol Limits</b><br />
-                                Pressure: @CurrentPressure / @SelectedItem.MaxAllowedPressureBar<br />
-                                Hours: @CurrentHours / @SelectedItem.MaxAllowedUsageHours<br />
-                                Injections: @CurrentInjections / @SelectedItem.MaxAllowedInjections<br />
+                                <hr />
 
-                                <br />
+                                <strong>Column Safety Check</strong><br />
+                                <small>
+                                    Column Max Pressure: @SelectedItem.ColumnMaxPressureBar bar<br />
+                                    Observed Pressure: @CheckinModel.MaxPressureObservedBar.ToString("F2") bar
+                                </small>
 
-                                <b>Column Safety</b><br />
-                                <b>Column Max Pressure:</b> @SelectedItem.ColumnMaxPressureBar bar<br />
-                                <b>Observed:</b> @CheckinModel.MaxPressureObservedBar bar
-
-                                <div class="mt-2"><strong>@StatusMessage</strong></div>
+                                <div class="mt-2"><strong style="font-size: 1.1rem;">@StatusMessage</strong></div>
                             </div>
                         }
 
                         <div class="mb-3">
-                            <label>Remarks</label>
+                            <label class="form-label">Remarks</label>
                             <InputTextArea @bind-Value="CheckinModel.Remarks"
                                            class="form-control"
-                                           rows="3" />
+                                           rows="3"
+                                           placeholder="Any observations or notes about column condition" />
                         </div>
 
                         <div class="modal-footer">
@@ -137,10 +159,9 @@ else
                             </button>
 
                             <button type="submit" class="btn btn-success">
-                                Complete Check-in
+                                <i class="bi bi-check-circle"></i> Complete Check-in
                             </button>
                         </div>
-
                     </EditForm>
                 </div>
             </div>
@@ -152,6 +173,8 @@ else
     private List<ColumnCheckoutReadDto> CheckoutList = new();
 
     private bool IsCheckin;
+    private bool IsLoading = true;
+    private string? Message;
     private ColumnCheckoutReadDto? SelectedItem;
     private ColumnCheckinDto CheckinModel = new();
 
@@ -170,7 +193,10 @@ else
 
     private async Task LoadData()
     {
+        IsLoading = true;
+        Message = null;
         CheckoutList = await UsageService.GetCheckedOutOnlyAsync();
+        IsLoading = false;
     }
 
     private void BeginCheckin(ColumnCheckoutReadDto item)
@@ -180,7 +206,8 @@ else
 
         CheckinModel = new ColumnCheckinDto
         {
-            CheckoutID = item.CheckoutID
+            CheckoutID = item.CheckoutID,
+            CheckinDate = DateTime.UtcNow
         };
 
         EvaluateLimits();
@@ -190,6 +217,7 @@ else
     {
         IsCheckin = false;
         SelectedItem = null;
+        Message = null;
     }
 
     private void EvaluateLimits()
@@ -216,27 +244,26 @@ else
              CurrentInjections > SelectedItem.MaxAllowedInjections * 0.8m);
 
         if (columnExceeded)
-            StatusMessage = "❌ Column damaged (pressure exceeded)";
+            StatusMessage = "❌ DAMAGED - Column pressure limit exceeded!";
         else if (protocolExceeded)
-            StatusMessage = "❌ Protocol limits exceeded";
+            StatusMessage = "❌ EXCEEDED - Protocol limits exceeded!";
         else if (IsWarning)
-            StatusMessage = "⚠ Approaching limits";
+            StatusMessage = "⚠️ WARNING - Approaching protocol limits (80%)";
         else
-            StatusMessage = "✅ Safe";
+            StatusMessage = "✅ SAFE - All limits within range";
     }
 
     private async Task SaveCheckin()
     {
         EvaluateLimits();
 
-        // 🔥 AUTO STATUS DECISION
         if (IsExceeded)
         {
             CheckinModel.Status = ColumnStatus.Retired;
 
             var confirm = await JSRuntime.InvokeAsync<bool>(
                 "confirm",
-                "Limits exceeded. Column will be RETIRED. Continue?"
+                "Limits exceeded. Column will be marked as RETIRED. Continue?"
             );
 
             if (!confirm) return;
@@ -247,7 +274,38 @@ else
 
             var confirm = await JSRuntime.InvokeAsync<bool>(
                 "confirm",
-                "Approaching limits. Mark as UNDER MAINTENANCE?"
+                "Approaching limits. Mark column as UNDER MAINTENANCE for inspection?"
+            );
+
+            if (!confirm)
+                CheckinModel.Status = ColumnStatus.Available;
+        }
+        else
+        {
+            CheckinModel.Status = ColumnStatus.Available;
+        }
+
+        var result = await UsageService.CheckinAsync(CheckinModel);
+
+        if (result.Success)
+        {
+            Message = result.Message ?? "Check-in completed successfully.";
+            IsCheckin = false;
+            SelectedItem = null;
+            await LoadData();
+        }
+        else
+        {
+            Message = result.Message ?? "Failed to complete check-in.";
+        }
+    }
+
+    private string GetDaysOut(DateTime checkoutDate)
+    {
+        var days = (int)(DateTime.UtcNow - checkoutDate).TotalDays;
+        return days == 0 ? "Today" : days == 1 ? "1 day" : $"{days} days";
+    }
+}
             );
 
             if (!confirm)

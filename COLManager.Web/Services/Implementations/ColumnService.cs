@@ -378,6 +378,10 @@ namespace COLManager.Web.Services
                 if (entity == null)
                     return ServiceResult<ColumnMasterReadDto>.Fail("Column not found.");
 
+                // Prevent modification if InstalledOn date is set
+                if (entity.InstalledOn.HasValue)
+                    return ServiceResult<ColumnMasterReadDto>.Fail("Column cannot be modified after the Installed date has been set.");
+
                 // Prevent changing the column name after creation
                 if (entity.ColumnName != dto.ColumnName)
                     return ServiceResult<ColumnMasterReadDto>.Fail("Column name cannot be modified after creation.");

@@ -1,0 +1,515 @@
+@page "/column-history/{ColumnId:int}"
+@using COLManager.Web.DTOs
+@using COLManager.Web.Enums
+@inject COLManager.Web.Services.IColumnService ColumnService
+@inject COLManager.Web.Services.IAuditService AuditService
+@inject COLManager.Web.Services.IMaintenanceService MaintenanceService
+@inject NavigationManager NavigationManager
+
+<div class="container-fluid">
+    @if (IsLoading)
+    {
+        <p><span class="spinner-border spinner-border-sm me-2"></span>Loading column history...</p>
+    }
+    else if (Column == null)
+    {
+        <div class="alert alert-danger">
+            <strong>Column not found.</strong> <a href="/columns">Back to Columns</a>
+        </div>
+    }
+    else
+    {
+        <div class="mb-4">
+            <a href="/columns" class="btn btn-secondary btn-sm"><i class="bi bi-arrow-left"></i> Back to Columns</a>
+        </div>
+
+        <div class="card mb-4">
+            <div class="card-header bg-dark text-white">
+                <h4 class="mb-0"><i class="bi bi-clock-history"></i> Column History Timeline</h4>
+            </div>
+            <div class="card-body">
+                <div class="row mb-4">
+                    <div class="col-md-6">
+                        <h5>Column Information</h5>
+                        <table class="table table-sm">
+                            <tbody>
+                                <tr>
+                                    <td><strong>Name:</strong></td>
+                                    <td>@Column.ColumnName</td>
+                                </tr>
+                                <tr>
+                                    <td><strong>Serial Number:</strong></td>
+                                    <td><code>@Column.SerialNumber</code></td>
+                                </tr>
+                                <tr>
+                                    <td><strong>Manufacturer:</strong></td>
+                                    <td>@Column.Manufacturer</td>
+                                </tr>
+                                <tr>
+                                    <td><strong>Current Status:</strong></td>
+                                    <td><span class="@GetStatusClass(Column.StatusID)">@GetStatusName(Column.StatusID)</span></td>
+                                </tr>
+                                <tr>
+                                    <td><strong>Created:</strong></td>
+                                    <td>@Column.CreatedOn.ToString("yyyy-MM-dd HH:mm")</td>
+                                </tr>
+                                @if (Column.InstalledOn.HasValue)
+                                {
+                                    <tr>
+                                        <td><strong>Installed:</strong></td>
+                                        <td>@Column.InstalledOn.Value.ToString("yyyy-MM-dd HH:mm")</td>
+                                    </tr>
+                                }
+                                @if (Column.RetiredOn.HasValue)
+                                {
+                                    <tr>
+                                        <td><strong>Retired:</strong></td>
+                                        <td>@Column.RetiredOn.Value.ToString("yyyy-MM-dd HH:mm")</td>
+                                    </tr>
+                                }
+                            </tbody>
+                        </table>
+                    </div>
+                    <div class="col-md-6">
+                        <h5>Usage Statistics</h5>
+                        <table class="table table-sm">
+                            <tbody>
+                                <tr>
+                                    <td><strong>Total Runtime Hours:</strong></td>
+                                    <td>@Column.TotalRuntimeHours</td>
+                                </tr>
+                                <tr>
+                                    <td><strong>Total Injections:</strong></td>
+                                    <td>@Column.TotalInjections</td>
+                                </tr>
+                                <tr>
+                                    <td><strong>Total Checkouts:</strong></td>
+                                    <td><span class="badge bg-info">@TotalCheckouts</span></td>
+                                </tr>
+                                <tr>
+                                    <td><strong>Total Maintenance Records:</strong></td>
+                                    <td><span class="badge bg-warning">@TotalMaintenanceRecords</span></td>
+                                </tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+
+                <hr />
+
+                <h5><i class="bi bi-diagram-3"></i> Activity Timeline</h5>
+
+                @if (HistoryEvents == null || !HistoryEvents.Any())
+                {
+                    <div class="alert alert-info">
+                        No activity history found for this column.
+                    </div>
+                }
+                else
+                {
+                    <div class="timeline">
+                        @foreach (var evt in HistoryEvents)
+                        {
+                            <div class="timeline-item mb-4">
+                                <div class="row">
+                                    <div class="col-md-1 text-center">
+                                        <div class="timeline-marker @GetEventBadgeClass(evt.EventType)">
+                                            @GetEventIcon(evt.EventType)
+                                        </div>
+                                    </div>
+                                    <div class="col-md-11">
+                                        <div class="card">
+                                            <div class="card-header">
+                                                <h6 class="mb-0">
+                                                    <strong>@GetEventTitle(evt.EventType)</strong>
+                                                    <span class="float-end text-muted small">@evt.EventDate.ToString("yyyy-MM-dd HH:mm:ss")</span>
+                                                </h6>
+                                            </div>
+                                            <div class="card-body">
+                                                @if (evt.EventType == "CHECKOUT")
+                                                {
+                                                    <p class="mb-2">Column was checked out for use.</p>
+                                                    @if (evt.Details != null)
+                                                    {
+                                                        <table class="table table-sm table-borderless">
+                                                            <tbody>
+                                                                @foreach (var detail in evt.Details)
+                                                                {
+                                                                    <tr>
+                                                                        <td><strong>@detail.Key:</strong></td>
+                                                                        <td>@detail.Value</td>
+                                                                    </tr>
+                                                                }
+                                                            </tbody>
+                                                        </table>
+                                                    }
+                                                }
+                                                else if (evt.EventType == "CHECKIN")
+                                                {
+                                                    <p class="mb-2">Column was checked in after use.</p>
+                                                    @if (evt.Details != null)
+                                                    {
+                                                        <table class="table table-sm table-borderless">
+                                                            <tbody>
+                                                                @foreach (var detail in evt.Details)
+                                                                {
+                                                                    <tr>
+                                                                        <td><strong>@detail.Key:</strong></td>
+                                                                        <td>@detail.Value</td>
+                                                                    </tr>
+                                                                }
+                                                            </tbody>
+                                                        </table>
+                                                    }
+                                                }
+                                                else if (evt.EventType == "MAINTENANCE")
+                                                {
+                                                    <p class="mb-2">Column underwent maintenance and status changed.</p>
+                                                    @if (evt.Details != null)
+                                                    {
+                                                        <table class="table table-sm table-borderless">
+                                                            <tbody>
+                                                                @foreach (var detail in evt.Details)
+                                                                {
+                                                                    <tr>
+                                                                        <td><strong>@detail.Key:</strong></td>
+                                                                        <td>@detail.Value</td>
+                                                                    </tr>
+                                                                }
+                                                            </tbody>
+                                                        </table>
+                                                    }
+                                                }
+                                                else if (evt.EventType == "RETIRED")
+                                                {
+                                                    <p class="mb-2 text-danger"><strong>Column was RETIRED and is no longer in use.</strong></p>
+                                                    @if (evt.Details != null)
+                                                    {
+                                                        <table class="table table-sm table-borderless">
+                                                            <tbody>
+                                                                @foreach (var detail in evt.Details)
+                                                                {
+                                                                    <tr>
+                                                                        <td><strong>@detail.Key:</strong></td>
+                                                                        <td>@detail.Value</td>
+                                                                    </tr>
+                                                                }
+                                                            </tbody>
+                                                        </table>
+                                                    }
+                                                }
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        }
+                    </div>
+                }
+            </div>
+        </div>
+    }
+</div>
+
+<style>
+    .timeline {
+        position: relative;
+        padding-left: 30px;
+    }
+
+    .timeline-item {
+        position: relative;
+    }
+
+    .timeline-item::before {
+        content: '';
+        position: absolute;
+        left: -20px;
+        top: 0;
+        bottom: 0;
+        width: 2px;
+        background-color: #dee2e6;
+    }
+
+    .timeline-item:last-child::before {
+        display: none;
+    }
+
+    .timeline-marker {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        width: 40px;
+        height: 40px;
+        border-radius: 50%;
+        font-size: 18px;
+        border: 3px solid white;
+        box-shadow: 0 0 0 3px #dee2e6;
+    }
+
+    .timeline-marker.checkout {
+        background-color: #0d6efd;
+        color: white;
+    }
+
+    .timeline-marker.checkin {
+        background-color: #198754;
+        color: white;
+    }
+
+    .timeline-marker.maintenance {
+        background-color: #0dcaf0;
+        color: white;
+    }
+
+    .timeline-marker.retired {
+        background-color: #dc3545;
+        color: white;
+    }
+
+    .timeline-marker.created {
+        background-color: #6f42c1;
+        color: white;
+    }
+
+    .card-header {
+        background-color: #f8f9fa;
+        border-bottom: 1px solid #dee2e6;
+    }
+
+    .table-borderless td {
+        padding: 0.25rem 0;
+        border: none;
+    }
+</style>
+
+@code {
+    [Parameter]
+    public int ColumnId { get; set; }
+
+    private ColumnMasterReadDto? Column;
+    private List<HistoryEvent> HistoryEvents = new();
+    private bool IsLoading = true;
+    private int TotalCheckouts = 0;
+    private int TotalMaintenanceRecords = 0;
+
+    private class HistoryEvent
+    {
+        public string EventType { get; set; } = "";
+        public DateTime EventDate { get; set; }
+        public Dictionary<string, string>? Details { get; set; }
+    }
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadColumnHistory();
+    }
+
+    private async Task LoadColumnHistory()
+    {
+        IsLoading = true;
+
+        // Load column info
+        var colRes = await ColumnService.GetByIdAsync(ColumnId);
+        if (colRes.Success)
+        {
+            Column = colRes.Data;
+        }
+
+        // Load audit trail
+        var auditRes = await AuditService.GetByTableAndRecordAsync("Column_Master", ColumnId);
+        if (auditRes.Success && auditRes.Data != null)
+        {
+            var auditList = auditRes.Data.ToList();
+
+            // Process audit entries into history events
+            foreach (var audit in auditList)
+            {
+                var evt = new HistoryEvent
+                {
+                    EventType = audit.OperationType,
+                    EventDate = audit.ChangedOn,
+                    Details = ParseAuditData(audit.NewData, audit.OperationType)
+                };
+
+                HistoryEvents.Add(evt);
+
+                // Count operations
+                if (audit.OperationType == "CHECKOUT")
+                    TotalCheckouts++;
+            }
+        }
+
+        // Load maintenance records separately
+        var maintRes = await MaintenanceService.GetByColumnAsync(ColumnId);
+        if (maintRes.Success && maintRes.Data != null)
+        {
+            var maintList = maintRes.Data.ToList();
+            TotalMaintenanceRecords = maintList.Count;
+        }
+
+        // Sort by date descending (most recent first)
+        HistoryEvents = HistoryEvents.OrderByDescending(e => e.EventDate).ToList();
+
+        // Add creation event if not already present
+        if (Column != null && !HistoryEvents.Any(e => e.EventType == "NEW"))
+        {
+            HistoryEvents.Add(new HistoryEvent
+            {
+                EventType = "NEW",
+                EventDate = Column.CreatedOn,
+                Details = new Dictionary<string, string>
+                {
+                    { "Column Name", Column.ColumnName },
+                    { "Serial Number", Column.SerialNumber },
+                    { "Status", "Column Created" }
+                }
+            });
+
+            // Re-sort
+            HistoryEvents = HistoryEvents.OrderByDescending(e => e.EventDate).ToList();
+        }
+
+        IsLoading = false;
+    }
+
+    private Dictionary<string, string>? ParseAuditData(string? jsonData, string operationType)
+    {
+        if (string.IsNullOrEmpty(jsonData))
+            return null;
+
+        try
+        {
+            using (System.Text.Json.JsonDocument doc = System.Text.Json.JsonDocument.Parse(jsonData))
+            {
+                var result = new Dictionary<string, string>();
+                var root = doc.RootElement;
+
+                FlattenJsonElement(root, "", result);
+
+                return result.Any() ? result : null;
+            }
+        }
+        catch
+        {
+            return null;
+        }
+    }
+
+    private void FlattenJsonElement(System.Text.Json.JsonElement element, string prefix, Dictionary<string, string> result)
+    {
+        if (element.ValueKind == System.Text.Json.JsonValueKind.Object)
+        {
+            foreach (var property in element.EnumerateObject())
+            {
+                var newKey = string.IsNullOrEmpty(prefix) ? property.Name : $"{prefix} > {property.Name}";
+                FlattenJsonElement(property.Value, newKey, result);
+            }
+        }
+        else if (element.ValueKind == System.Text.Json.JsonValueKind.Array)
+        {
+            var arrayElements = new List<string>();
+            foreach (var item in element.EnumerateArray())
+            {
+                if (item.ValueKind == System.Text.Json.JsonValueKind.Object || item.ValueKind == System.Text.Json.JsonValueKind.Array)
+                {
+                    arrayElements.Add(System.Text.Json.JsonSerializer.Serialize(item));
+                }
+                else
+                {
+                    arrayElements.Add(item.ToString());
+                }
+            }
+            result[FormatFieldName(prefix)] = string.Join(", ", arrayElements);
+        }
+        else
+        {
+            var value = element.ValueKind switch
+            {
+                System.Text.Json.JsonValueKind.String => element.GetString() ?? "",
+                System.Text.Json.JsonValueKind.Number => element.GetRawText(),
+                System.Text.Json.JsonValueKind.True => "Yes",
+                System.Text.Json.JsonValueKind.False => "No",
+                System.Text.Json.JsonValueKind.Null => "-",
+                _ => element.ToString()
+            };
+            result[FormatFieldName(prefix)] = value;
+        }
+    }
+
+    private string FormatFieldName(string fieldName)
+    {
+        // Convert camelCase to Title Case
+        var result = System.Text.RegularExpressions.Regex.Replace(
+            fieldName,
+            "([a-z])([A-Z])",
+            "$1 $2"
+        );
+        return System.Globalization.CultureInfo.CurrentCulture.TextInfo.ToTitleCase(result);
+    }
+
+    private string GetEventTitle(string eventType)
+    {
+        return eventType switch
+        {
+            "NEW" => "✨ Column Created",
+            "CHECKOUT" => "📦 Checked Out",
+            "CHECKIN" => "✅ Checked In",
+            "MAINTENANCE" => "🔧 Maintenance",
+            "RETIRED" => "🚫 Retired",
+            _ => eventType
+        };
+    }
+
+    private string GetEventBadgeClass(string eventType)
+    {
+        return eventType switch
+        {
+            "NEW" => "timeline-marker created",
+            "CHECKOUT" => "timeline-marker checkout",
+            "CHECKIN" => "timeline-marker checkin",
+            "MAINTENANCE" => "timeline-marker maintenance",
+            "RETIRED" => "timeline-marker retired",
+            _ => "timeline-marker"
+        };
+    }
+
+    private string GetEventIcon(string eventType)
+    {
+        return eventType switch
+        {
+            "NEW" => "✨",
+            "CHECKOUT" => "📦",
+            "CHECKIN" => "✅",
+            "MAINTENANCE" => "🔧",
+            "RETIRED" => "🚫",
+            _ => "ℹ"
+        };
+    }
+
+    private string GetStatusClass(int statusId)
+    {
+        var status = (ColumnStatus)statusId;
+        return status switch
+        {
+            ColumnStatus.Available => "badge bg-success",
+            ColumnStatus.CheckedOut => "badge bg-warning",
+            ColumnStatus.UnderMaintenance => "badge bg-warning text-dark",
+            ColumnStatus.Retired => "badge bg-danger",
+            _ => "badge bg-secondary"
+        };
+    }
+
+    private string GetStatusName(int statusId)
+    {
+        var status = (ColumnStatus)statusId;
+        return status switch
+        {
+            ColumnStatus.Available => "Available",
+            ColumnStatus.CheckedOut => "Checked Out",
+            ColumnStatus.UnderMaintenance => "Under Maintenance",
+            ColumnStatus.Retired => "Retired",
+            _ => $"Status {statusId}"
+        };
+    }
+}

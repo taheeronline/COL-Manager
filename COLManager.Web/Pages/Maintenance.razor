@@ -5,79 +5,188 @@
 
 <h3>Maintenance</h3>
 
-@if (!string.IsNullOrEmpty(Message)) { <div class="message">@Message</div> }
+<button class="btn btn-primary" @onclick="BeginCreate" disabled="@(UnderMaintenanceColumns == null || !UnderMaintenanceColumns.Any())">
+    <i class="bi bi-plus-circle"></i> New Maintenance
+</button>
 
-<div>
-    <label>Select Column</label>
-    <InputSelect @bind-Value="SelectedColumnId" onchange="LoadForColumn">
-        <option value="0">-- select --</option>
-        @foreach (var c in Columns)
+@if (!string.IsNullOrEmpty(Message))
+{
+    <div class="alert alert-info alert-dismissible fade show mt-3" role="alert">
+        @Message
+        <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+    </div>
+}
+
+<div class="mt-3">
+    <label class="form-label">Select Column to View Maintenance History <span style="color:red;">*</span></label>
+    <select @bind="SelectedColumnId" @bind:after="LoadForColumn" class="form-select">
+        <option value="0">-- Select a Column --</option>
+        @foreach (var c in AllColumns)
         {
             <option value="@c.ColumnID">@c.ColumnName (@c.SerialNumber)</option>
         }
-    </InputSelect>
+    </select>
+    @if (AllColumns != null && !AllColumns.Any())
+    {
+        <small class="text-muted">No columns available.</small>
+    }
 </div>
 
 @if (IsLoading)
 {
-    <p>Loading...</p>
+    <p class="mt-3"><span class="spinner-border spinner-border-sm me-2"></span>Loading maintenance records...</p>
+}
+else if (SelectedColumnId == 0)
+{
+    <div class="alert alert-warning mt-3">
+        Please select a column to view its maintenance history.
+    </div>
 }
 else
 {
-    <button class="btn" @onclick="BeginCreate">New Maintenance</button>
-    <table class="table">
-        <thead>
-            <tr>
-                <th>ID</th>
-                <th>Type</th>
-                <th>Description</th>
-                <th>PerformedOn</th>
-                <th>PerformedBy</th>
-            </tr>
-        </thead>
-        <tbody>
-            @foreach (var m in Maints)
-            {
-                <tr>
-                    <td>@m.MaintenanceID</td>
-                    <td>@m.MaintenanceType</td>
-                    <td>@m.Description</td>
-                    <td>@m.PerformedOn.ToString("yyyy-MM-dd")</td>
-                    <td>@m.PerformedBy</td>
-                </tr>
-            }
-        </tbody>
-    </table>
+    <div class="mt-4">
+        <h5>
+            <i class="bi bi-tools"></i> Maintenance History for <strong>@GetColumnNameById(SelectedColumnId)</strong>
+        </h5>
+
+        @if (Maints == null || !Maints.Any())
+        {
+            <div class="alert alert-info mt-2">
+                No maintenance records found for this column. 
+                @if (IsColumnUnderMaintenance(SelectedColumnId))
+                {
+                    <a href="#" @onclick="() => BeginCreate()" @onclick:preventDefault>Create one now</a>
+                }
+            </div>
+        }
+        else
+        {
+            <div class="table-responsive">
+                <table class="table table-striped table-hover mt-3">
+                    <thead class="table-dark">
+                        <tr>
+                            <th hidden>ID</th>
+                            <th>Maintenance Type</th>
+                            <th>Description</th>
+                            <th>Performed On</th>
+                            <th>Performed By</th>
+                            <th hidden>Days Ago</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        @foreach (var m in Maints)
+                        {
+                            <tr>
+                                <td hidden>@m.MaintenanceID</td>
+                                <td>
+                                    <span class="badge bg-info">@m.MaintenanceType</span>
+                                </td>
+                                <td>
+                                    @if (!string.IsNullOrEmpty(m.Description))
+                                    {
+                                        <span title="@m.Description">@(m.Description.Length > 50 ? m.Description.Substring(0, 50) + "..." : m.Description)</span>
+                                    }
+                                    else
+                                    {
+                                        <span class="text-muted">-</span>
+                                    }
+                                </td>
+                                <td>@m.PerformedOn.ToString("yyyy-MM-dd HH:mm:ss")</td>
+                                <td>@m.PerformedBy</td>
+                                <td hidden>
+                                    <span class="badge bg-secondary">@GetDaysAgo(m.PerformedOn)</span>
+                                </td>
+                            </tr>
+                        }
+                    </tbody>
+                </table>
+            </div>
+
+            <div class="mt-3 alert alert-light">
+                <strong>Total Maintenance Records:</strong> @Maints.Count()
+                <br />
+                <strong>Last Maintenance:</strong> @(Maints.FirstOrDefault()?.PerformedOn.ToString("yyyy-MM-dd HH:mm:ss") ?? "N/A")
+                <br />
+                <strong>Most Common Type:</strong> @GetMostCommonMaintenanceType()
+            </div>
+        }
+    </div>
 }
 
 @if (Creating)
 {
-    <h4>Log Maintenance</h4>
-    <EditForm Model="CreateModel" OnValidSubmit="Create">
-        <DataAnnotationsValidator />
-        <ValidationSummary />
-        <div>
-            <label>Maintenance Type</label>
-            <InputText @bind-Value="CreateModel.MaintenanceType" />
+    <div class="modal show d-block" style="background-color: rgba(0,0,0,0.5);">
+        <div class="modal-dialog modal-lg">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title">Log Maintenance - @GetColumnNameById(CreateModel.ColumnID)</h5>
+                    <button type="button" class="btn-close" @onclick="CancelCreate"></button>
+                </div>
+                <div class="modal-body">
+                    @if (UnderMaintenanceColumns == null || !UnderMaintenanceColumns.Any())
+                    {
+                        <div class="alert alert-warning">
+                            <strong>No columns available for maintenance.</strong> All columns are either available, checked out, or retired.
+                        </div>
+                    }
+                    else
+                    {
+                        <EditForm Model="CreateModel" OnValidSubmit="Create">
+                            <DataAnnotationsValidator />
+                            <ValidationSummary />
+
+                            <div class="mb-3">
+                                <label class="form-label">Column <span style="color:red;">*</span></label>
+                                <InputSelect @bind-Value="CreateModel.ColumnID" class="form-select">
+                                    <option value="0">-- Select Column --</option>
+                                    @foreach (var c in UnderMaintenanceColumns)
+                                    {
+                                        <option value="@c.ColumnID">@c.ColumnName (@c.SerialNumber)</option>
+                                    }
+                                </InputSelect>
+                            </div>
+
+                            <div class="mb-3">
+                                <label class="form-label">Maintenance Type <span style="color:red;">*</span></label>
+                                <InputText @bind-Value="CreateModel.MaintenanceType" class="form-control" placeholder="e.g., Cleaning, Calibration, Repair" />
+                            </div>
+
+                            <div class="mb-3">
+                                <label class="form-label">Description</label>
+                                <InputTextArea @bind-Value="CreateModel.Description" class="form-control" rows="4" placeholder="Details about the maintenance performed" />
+                            </div>
+
+                            <div class="mb-3">
+                                <label class="form-label">Performed By <span style="color:red;">*</span></label>
+                                <InputText @bind-Value="CreateModel.PerformedBy" class="form-control" placeholder="Technician or service provider name" />
+                            </div>
+
+                            <div class="mb-3">
+                                <label class="form-label">Performed On</label>
+                                <InputDate @bind-Value="CreateModel.PerformedOn" class="form-control" />
+                                <small class="text-muted">Leave empty to use current date/time</small>
+                            </div>
+
+                            <div class="alert alert-info">
+                                <strong>Note:</strong> Once this maintenance record is saved, the column status will automatically change to <strong>Available</strong>.
+                            </div>
+
+                            <div class="modal-footer">
+                                <button type="button" class="btn btn-secondary" @onclick="CancelCreate">Cancel</button>
+                                <button type="submit" class="btn btn-primary" disabled="@(CreateModel.ColumnID == 0)">Save Maintenance</button>
+                            </div>
+                        </EditForm>
+                    }
+                </div>
+            </div>
         </div>
-        <div>
-            <label>Description</label>
-            <InputTextArea @bind-Value="CreateModel.Description" />
-        </div>
-        <div>
-            <label>Performed By</label>
-            <InputText @bind-Value="CreateModel.PerformedBy" />
-        </div>
-        <div style="margin-top:8px;">
-            <button type="submit" class="btn">Save</button>
-            <button type="button" class="btn" @onclick="CancelCreate">Cancel</button>
-        </div>
-    </EditForm>
+    </div>
 }
 
 @code {
     private IEnumerable<COLManager.Web.Entities.ColumnMaintenanceLog> Maints = Array.Empty<COLManager.Web.Entities.ColumnMaintenanceLog>();
-    private IEnumerable<COLManager.Web.DTOs.ColumnMasterReadDto> Columns = Array.Empty<COLManager.Web.DTOs.ColumnMasterReadDto>();
+    private IEnumerable<COLManager.Web.DTOs.ColumnMasterReadDto> AllColumns = Array.Empty<COLManager.Web.DTOs.ColumnMasterReadDto>();
+    private IEnumerable<COLManager.Web.DTOs.ColumnMasterReadDto> UnderMaintenanceColumns = Array.Empty<COLManager.Web.DTOs.ColumnMasterReadDto>();
     private int SelectedColumnId = 0;
     private bool IsLoading = true;
     private bool Creating = false;
@@ -88,16 +197,24 @@ else
     protected override async Task OnInitializedAsync()
     {
         var cols = await ColumnService.GetAllAsync();
-        if (cols.Success) Columns = cols.Data ?? Array.Empty<COLManager.Web.DTOs.ColumnMasterReadDto>();
+        if (cols.Success)
+        {
+            AllColumns = cols.Data ?? Array.Empty<COLManager.Web.DTOs.ColumnMasterReadDto>();
+            // Filter only columns with UnderMaintenance status (status ID = 3) for maintenance creation
+            UnderMaintenanceColumns = AllColumns.Where(c => c.StatusID == 3 || c.StatusID==1);
+        }
         IsLoading = false;
     }
 
-    private async Task LoadForColumn(ChangeEventArgs args)
+    private async Task LoadForColumn()
     {
-        if (int.TryParse(args?.Value?.ToString(), out var id))
+        if (SelectedColumnId > 0)
         {
-            SelectedColumnId = id;
             await Load();
+        }
+        else
+        {
+            Maints = Array.Empty<COLManager.Web.Entities.ColumnMaintenanceLog>();
         }
     }
 
@@ -105,31 +222,96 @@ else
     {
         if (SelectedColumnId == 0) return;
         IsLoading = true;
+        Message = null;
         var res = await MaintenanceService.GetByColumnAsync(SelectedColumnId);
-        if (res.Success) Maints = res.Data ?? Array.Empty<COLManager.Web.Entities.ColumnMaintenanceLog>();
-        else Message = res.Message;
+        if (res.Success)
+            Maints = res.Data ?? Array.Empty<COLManager.Web.Entities.ColumnMaintenanceLog>();
+        else
+            Message = res.Message;
         IsLoading = false;
     }
 
     private void BeginCreate()
     {
-        if (SelectedColumnId == 0) { Message = "Select a column first."; return; }
+        if (UnderMaintenanceColumns == null || !UnderMaintenanceColumns.Any())
+        {
+            Message = "No columns available for maintenance (columns must have 'Under Maintenance' status).";
+            return;
+        }
         Creating = true;
-        CreateModel = new COLManager.Web.Entities.ColumnMaintenanceLog { ColumnID = SelectedColumnId };
+        CreateModel = new COLManager.Web.Entities.ColumnMaintenanceLog
+        {
+            ColumnID = SelectedColumnId > 0 && IsColumnUnderMaintenance(SelectedColumnId) ? SelectedColumnId : 0,
+            PerformedOn = DateTime.UtcNow
+        };
     }
 
-    private void CancelCreate() => Creating = false;
+    private void CancelCreate()
+    {
+        Creating = false;
+        Message = null;
+    }
 
     private async Task Create()
     {
         Message = null;
+        if (CreateModel.ColumnID == 0)
+        {
+            Message = "Please select a column for maintenance.";
+            return;
+        }
+
         var res = await MaintenanceService.CreateAsync(CreateModel);
         if (res.Success)
         {
             Message = res.Message;
             Creating = false;
+            // Reload columns to reflect status changes
+            var cols = await ColumnService.GetAllAsync();
+            if (cols.Success)
+            {
+                AllColumns = cols.Data ?? Array.Empty<COLManager.Web.DTOs.ColumnMasterReadDto>();
+                UnderMaintenanceColumns = AllColumns.Where(c => c.StatusID == 3);
+                // Reset selection if previously selected column no longer has UnderMaintenance status
+                if (AllColumns.FirstOrDefault(c => c.ColumnID == SelectedColumnId)?.StatusID != 3)
+                    SelectedColumnId = 0;
+            }
             await Load();
         }
-        else Message = res.Message;
+        else
+            Message = res.Message;
+    }
+
+    private string GetColumnNameById(int columnId)
+    {
+        var column = AllColumns.FirstOrDefault(x => x.ColumnID == columnId);
+        return column?.ColumnName ?? $"ID: {columnId}";
+    }
+
+    private string GetDaysAgo(DateTime performedOn)
+    {
+        var days = (int)(DateTime.UtcNow - performedOn).TotalDays;
+        return days == 0 ? "Today" : days == 1 ? "1 day ago" : $"{days} days ago";
+    }
+
+    private string GetMostCommonMaintenanceType()
+    {
+        if (Maints == null || !Maints.Any())
+            return "N/A";
+
+        var mostCommon = Maints
+            .GroupBy(m => m.MaintenanceType)
+            .OrderByDescending(g => g.Count())
+            .FirstOrDefault()
+            ?.Key;
+
+        return mostCommon ?? "N/A";
+    }
+
+    private bool IsColumnUnderMaintenance(int columnId)
+    {
+        var column = AllColumns.FirstOrDefault(c => c.ColumnID == columnId);
+        return column?.StatusID == 3;
     }
 }
+

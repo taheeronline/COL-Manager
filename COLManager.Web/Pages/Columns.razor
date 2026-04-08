@@ -5,6 +5,7 @@
 @inject COLManager.Web.Services.IStatusService StatusService
 @inject COLManager.Web.Services.IAuditService AuditService
 @inject Microsoft.JSInterop.IJSRuntime JS
+@inject NavigationManager NavigationManager
 
 <h3>Columns</h3>
 
@@ -74,6 +75,9 @@ else
                     <td>
                         <button class="btn btn-sm btn-info me-1" @onclick="() => Edit(c.ColumnID)" title="Edit">
                             <i class="bi bi-pencil"></i>
+                        </button>
+                        <button class="btn btn-sm btn-primary me-1" @onclick="() => ViewColumnHistory(c.ColumnID)" title="View Column History">
+                            <i class="bi bi-diagram-3"></i>
                         </button>
                         <button class="btn btn-sm btn-secondary me-1" @onclick="() => ViewAuditTrail(c.ColumnID)" title="View Audit Trail">
                             <i class="bi bi-clock-history"></i>
@@ -234,9 +238,25 @@ else
                                                 {
                                                     <span class="badge bg-success"><i class="bi bi-plus-circle"></i> NEW</span>
                                                 }
-                                                else
+                                                else if (audit.OperationType == "MODIFY")
                                                 {
                                                     <span class="badge bg-warning"><i class="bi bi-pencil"></i> MODIFY</span>
+                                                }
+                                                else if (audit.OperationType == "MAINTENANCE")
+                                                {
+                                                    <span class="badge bg-info"><i class="bi bi-tools"></i> MAINTENANCE</span>
+                                                }
+                                                else if (audit.OperationType == "CHECKOUT")
+                                                {
+                                                    <span class="badge bg-primary"><i class="bi bi-box-seam"></i> CHECKOUT</span>
+                                                }
+                                                else if (audit.OperationType == "CHECKIN")
+                                                {
+                                                    <span class="badge bg-success"><i class="bi bi-box2-heart"></i> CHECK-IN</span>
+                                                }
+                                                else
+                                                {
+                                                    <span class="badge bg-secondary">@audit.OperationType</span>
                                                 }
                                             </td>
                                             <td>
@@ -325,6 +345,84 @@ else
                                                     <td><strong>@item.FieldName</strong></td>
                                                     <td>@item.OldValue</td>
                                                     <td><span class="bg-warning bg-opacity-25 px-2 py-1 rounded">@item.NewValue</span></td>
+                                                </tr>
+                                            }
+                                        }
+                                    </tbody>
+                                </table>
+                            </div>
+                        }
+                        else if (SelectedAuditEntry.OperationType == "MAINTENANCE")
+                        {
+                            <strong>Maintenance & Status Change Details:</strong>
+                            <div class="table-responsive mt-2">
+                                <table class="table table-sm table-bordered">
+                                    <thead class="table-light">
+                                        <tr>
+                                            <th>Field Name</th>
+                                            <th>Value</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        @if (AuditDetailsList != null && AuditDetailsList.Count > 0)
+                                        {
+                                            @foreach (var item in AuditDetailsList)
+                                            {
+                                                <tr>
+                                                    <td><strong>@item.FieldName</strong></td>
+                                                    <td>@item.NewValue</td>
+                                                </tr>
+                                            }
+                                        }
+                                    </tbody>
+                                </table>
+                            </div>
+                        }
+                        else if (SelectedAuditEntry.OperationType == "CHECKOUT")
+                        {
+                            <strong>Checkout Details:</strong>
+                            <div class="table-responsive mt-2">
+                                <table class="table table-sm table-bordered">
+                                    <thead class="table-light">
+                                        <tr>
+                                            <th>Field Name</th>
+                                            <th>Value</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        @if (AuditDetailsList != null && AuditDetailsList.Count > 0)
+                                        {
+                                            @foreach (var item in AuditDetailsList)
+                                            {
+                                                <tr>
+                                                    <td><strong>@item.FieldName</strong></td>
+                                                    <td>@item.NewValue</td>
+                                                </tr>
+                                            }
+                                        }
+                                    </tbody>
+                                </table>
+                            </div>
+                        }
+                        else if (SelectedAuditEntry.OperationType == "CHECKIN")
+                        {
+                            <strong>Check-in Details & Usage Information:</strong>
+                            <div class="table-responsive mt-2">
+                                <table class="table table-sm table-bordered">
+                                    <thead class="table-light">
+                                        <tr>
+                                            <th>Field Name</th>
+                                            <th>Value</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        @if (AuditDetailsList != null && AuditDetailsList.Count > 0)
+                                        {
+                                            @foreach (var item in AuditDetailsList)
+                                            {
+                                                <tr>
+                                                    <td><strong>@item.FieldName</strong></td>
+                                                    <td>@item.NewValue</td>
                                                 </tr>
                                             }
                                         }
@@ -451,9 +549,17 @@ else
         if (res.Success)
         {
             var c = res.Data;
+
+            // Check if column is locked (InstalledOn is set)
+            if (c!.InstalledOn.HasValue)
+            {
+                Message = "This column cannot be modified because its Installed date has been set.";
+                return;
+            }
+
             EditModel = new COLManager.Web.DTOs.ColumnMasterCreateDto
             {
-                ColumnName = c!.ColumnName,
+                ColumnName = c.ColumnName,
                 Manufacturer = c.Manufacturer,
                 SerialNumber = c.SerialNumber,
                 LengthMM = c.LengthMM,
@@ -464,6 +570,7 @@ else
                 StatusID = c.StatusID,
                 TotalRuntimeHours = c.TotalRuntimeHours,
                 TotalInjections = c.TotalInjections,
+                InstalledOn = c.InstalledOn,
                 RetiredOn = c.RetiredOn
             };
             EditId = id;
@@ -512,6 +619,7 @@ else
                 StatusID = EditModel.StatusID,
                 TotalRuntimeHours = EditModel.TotalRuntimeHours,
                 TotalInjections = EditModel.TotalInjections,
+                InstalledOn = EditModel.InstalledOn,
                 RetiredOn = EditModel.RetiredOn
             };
             var res = await ColumnService.UpdateAsync(updateDto);
@@ -557,6 +665,11 @@ else
         {
             Message = res.Message ?? "Failed to load audit trail.";
         }
+    }
+
+    private void ViewColumnHistory(int columnId)
+    {
+        NavigationManager.NavigateTo($"/column-history/{columnId}");
     }
 
     private void CloseAuditTrail()
