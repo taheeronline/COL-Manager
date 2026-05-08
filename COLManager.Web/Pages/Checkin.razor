@@ -306,23 +306,3 @@ else
         return days == 0 ? "Today" : days == 1 ? "1 day" : $"{days} days";
     }
 }
-            );
-
-            if (!confirm)
-                CheckinModel.Status = ColumnStatus.Available;
-        }
-        else
-        {
-            CheckinModel.Status = ColumnStatus.Available;
-        }
-
-        var result = await UsageService.CheckinAsync(CheckinModel);
-
-        if (result.Success)
-        {
-            IsCheckin = false;
-            SelectedItem = null;
-            await LoadData();
-        }
-    }
-}

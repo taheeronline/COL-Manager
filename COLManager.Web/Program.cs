@@ -1,6 +1,7 @@
 using COLManager.Web.Data;
 using COLManager.Web.Services;
 using COLManager.Web.Services.Implementations;
+using Microsoft.AspNetCore.Server.Kestrel.Core;
 using Microsoft.EntityFrameworkCore;
 using Serilog;
 
@@ -27,6 +28,20 @@ Log.Logger = new LoggerConfiguration()
     .CreateLogger();
 
 builder.Host.UseSerilog();
+
+// Configure Kestrel for proper port binding
+builder.WebHost.ConfigureKestrel(options =>
+{
+    options.ListenLocalhost(5000, listenOptions =>
+    {
+        listenOptions.Protocols = HttpProtocols.Http1AndHttp2;
+    });
+    options.ListenLocalhost(5001, listenOptions =>
+    {
+        listenOptions.Protocols = HttpProtocols.Http1AndHttp2;
+        listenOptions.UseHttps();
+    });
+});
 
 var webBuilder = builder;
 
@@ -63,4 +78,15 @@ app.MapControllers();
 app.MapBlazorHub();
 app.MapFallbackToPage("/_Host");
 
-app.Run();
+try
+{
+    app.Run();
+}
+catch (Exception ex)
+{
+    Log.Fatal(ex, "Application terminated unexpectedly");
+}
+finally
+{
+    Log.CloseAndFlush();
+}
